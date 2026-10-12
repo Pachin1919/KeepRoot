@@ -41,7 +41,8 @@ test('Reader graph is a separate same-page panel, while manual draft never start
   const model={project:{id:'P',name:'Project'},reader:{resource_id:'R',kind:'text',text:'draft body',name:'material.txt',relative_path:'material.txt'},resources:[],resourceFocusGraph:graph,graphMode:true};
   const html=renderResourceReaderView(model,{locale:'en'});assert.match(html,/id="reader-content" hidden/u);assert.match(html,/id="reader-graph">/u);assert.match(html,/data-reader-graph-toggle/u);
   const manual=renderResourceReaderView({...model,manual:{text:'unsaved draft',readHref:base+'/resources/read?resource_id=R',requestKey:'one'}},{locale:'en'});
-  assert.match(manual,/unsaved draft/u);assert.match(manual,/id="reader-graph" hidden/u);assert.doesNotMatch(manual,/data-reader-graph-toggle|id="reader-content" hidden/u);
+  const manualBody=manual.slice(manual.indexOf('<body'));
+  assert.match(manualBody,/unsaved draft/u);assert.match(manualBody,/id="reader-graph" hidden/u);assert.doesNotMatch(manualBody,/data-reader-graph-toggle|id="reader-content" hidden/u);
   const client=fs.readFileSync(new URL('../src/ui/client.js',import.meta.url),'utf8');assert.match(client,/visible && \(busy \|\| content.querySelector\('\.reader-edit'\)/u);
 });
 
@@ -58,13 +59,16 @@ test('node drag and pan do not open nodes; cancellation releases capture and fil
   const host=new Element({graphData:JSON.stringify({...graph,return_href:base+'/resources?resource_id=R&graph=1'})});
   host.querySelector=selector=>selectors[selector];host.querySelectorAll=selector=>selector==='[data-focus-graph-node]'?nodeElements:selector==='[data-focus-graph-edge]'?edgeElements:[];
   const storage=new Map();globalThis.sessionStorage={getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)};
-  globalThis.ResizeObserver=class{observe(){}};
+  let resized;
+  globalThis.ResizeObserver=class{constructor(callback){resized=callback;}observe(){}};
   try {
     mountResourceGraph(host);const initial=selectors['[data-graph-open]'].attrs.href;
     stage.events.wheel({deltaY:-250,clientX:200,clientY:120,preventDefault(){}});
     const chosenView=JSON.parse(storage.get('atlas-graph:P:R')).view;
     host.events['graph-visible']();
     assert.deepEqual(JSON.parse(storage.get('atlas-graph:P:R')).view,chosenView,'Showing the same canvas must preserve the chosen viewport');
+    stage.clientWidth=420;stage.clientHeight=280;resized();
+    assert.deepEqual(JSON.parse(storage.get('atlas-graph:P:R')).view,chosenView,'Changing the fixed workspace split must preserve zoom and pan');
     const ev=(id,x,y,target=nodeElements[1])=>({pointerId:id,clientX:x,clientY:y,target,button:0,preventDefault(){}});
     stage.events.pointerdown(ev(1,100,100));stage.events.pointermove(ev(1,180,140));stage.events.pointerup(ev(1,180,140));
     assert.equal(selectors['[data-graph-open]'].attrs.href,initial);assert.equal(stage.capture,null);

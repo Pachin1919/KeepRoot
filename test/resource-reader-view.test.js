@@ -13,6 +13,22 @@ const model = (overrides = {}) => ({ project: { id: 'P-reader', name: 'Reader Pr
   reader: { project_id: 'P-reader', resource_id: 'R-one', name: 'sample.md', relative_path: 'notes/sample.md', sha256: 'abc123', bytes: 20, kind: 'markdown', text: '# Title\n\nReadable body.' }, ...overrides });
 const render = (value, locale = 'en') => renderResourceReaderView(value, { csrfToken: 'csrf-reader', locale });
 
+test('Reader separates document commands and view controls while preserving live toggle names and targets', () => {
+  const html = render(model(), 'zh-CN');
+  const toolbar = html.match(/<header class="reader-toolbar">([^]*?)<\/header>/u)?.[1];
+  assert.ok(toolbar);
+  assert.match(toolbar, /class="reader-command-group reader-document-commands" role="group" aria-label="文档模式"/u);
+  assert.match(toolbar, /class="reader-command-group reader-view-commands" role="group" aria-label="视图控制"/u);
+  assert.match(toolbar, /class="reader-button reader-command-primary"[^>]*data-reader-inline-edit[^>]*data-reader-edit-label="编辑文字"[^>]*data-reader-read-label="渲染阅读"[^>]*aria-controls="reader-content">编辑文字<\/a>/u);
+  for (const [control, target] of [['files', 'reader-files'], ['focus', 'reader-content'], ['source', 'reader-source']]) {
+    assert.match(toolbar, new RegExp(`data-reader-${control}-toggle aria-controls="${target}"`, 'u'));
+  }
+  assert.match(toolbar, /class="reader-button reader-back-command"[^>]*>返回资源列表<\/a>/u);
+  assert.match(toolbar, /<summary class="reader-button">更多<\/summary>/u);
+  const modes = toolbar.match(/reader-document-commands[^>]*>([^]*?)<\/div>/u)[1];
+  assert.doesNotMatch(modes, /data-reader-files-toggle|data-reader-source-toggle/u);
+});
+
 test('Reader folds bounded YAML properties, retains editor source, and serves Chinese collapsed-diff phrases',()=>{
  const text='---\r\ntitle: 月度观察\r\ntype: fictional-demo\r\n---\r\n\r\n# 正文\r\n北区。\r\n';
  const html=render(model({reader:{...model().reader,text}}),'zh-CN');

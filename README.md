@@ -6,7 +6,7 @@ Keeproot keeps files in their existing project folders. People and AI hosts use 
 
 Current version: **2.0.0-preview.1**. This is preview source, not a stable release. Atlas remains the technical name used by the CLI, protocol, Skill and installation directories.
 
-The October 12 development checkpoint retains working features and known regressions. Its baseline ran once: 994 tests passed, 41 failed, and one was skipped. UI integration, navigation return context and Skill checks still need reconciliation. This checkpoint is not an installation release.
+The October 12 UI checkpoint adds fixed reader monitors, brighter controls, optional short transitions and read-only Git history. Its source baseline ran once: 1,031 tests passed, 44 failed, and one was skipped. Three stale UI assertions were corrected and passed a focused check; the earlier 41 failures remain. UI integration, navigation return context and Skill checks still need reconciliation. This checkpoint is not an installation release.
 
 ## What you can try
 
@@ -14,6 +14,8 @@ The October 12 development checkpoint retains working features and known regress
 - Open Toolbox in the left navigation, select CSV/XLSX materials, and enter a Python table recipe: align, combine, filter, convert types, deduplicate and sort; preview and save the full result.
 - In Toolbox → Content conversion, turn a supported static public URL into a real `.md` file: choose an existing folder, preview, explicitly Save, then read. Source JSON and conversation export capture remain separate options.
 - Edit Markdown or text alongside reading: preview changes, explicitly save to the same Resource, or Undo the edit. Editing does not launch an AI session.
+- Use the fixed document-and-monitors layout, or switch to four panels while retaining the same editor and relationship canvas. Optional motion follows both system and app reduced-motion preferences.
+- In Stages and recovery, inspect a local project's supported Git history, changed files and side-by-side diff. This view is read-only and does not provide Git rollback.
 - Calculate grouped sums, two-axis pivot totals/shares/ranks, and monthly totals with period growth. [Processing implementation and limits](<docs/Atlas 技术作品与企业评审说明.md#python-processing>).
 - Reuse a work configuration with explicitly selected new sources; review source changes.
 - Read confirmed rules as condition → destination diagrams; expand the full explanation and evidence when needed. Pending summaries open their complete proposal before showing rule conditions.

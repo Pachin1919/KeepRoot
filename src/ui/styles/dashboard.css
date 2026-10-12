@@ -1,51 +1,6 @@
 /* Layout mechanisms informed by Superset grid/header, Evidence surface depth
    and density, and Rill compact controls. Original CSS; no upstream source,
    fonts, theme engine or framework copied. Existing Atlas theme tokens apply. */
-/* Quiet application chrome; wallpaper, accent and reading-font settings remain. */
-html[data-theme="slate"] {
-  --canvas:#edf2ef;
-  --surface:#f8fbf9;
-  --surface-raised:#ffffff;
-  --surface-muted:#ecf2ee;
-  --ink:#24352b;
-  --muted:#526359;
-  --line:#cad7ce;
-  --topbar-bg:#f8fbf9;
-  --topbar-text:#24352b;
-  --topbar-muted:#526359;
-}
-html[data-theme="graphite"] {
-  --canvas:#f0edf2;
-  --surface:#faf8fc;
-  --surface-raised:#ffffff;
-  --surface-muted:#efeaf3;
-  --ink:#352c3b;
-  --muted:#64586b;
-  --line:#d5ccdb;
-  --topbar-bg:#faf8fc;
-  --topbar-text:#352c3b;
-  --topbar-muted:#64586b;
-}
-html[data-theme="warm_charcoal"] {
-  --canvas:#eef0ed;
-  --surface:#f9faf8;
-  --surface-raised:#ffffff;
-  --surface-muted:#edf1ee;
-  --ink:#24322e;
-  --muted:#56635d;
-  --line:#d2dad5;
-  --nav-bg:#242d29;
-  --nav-panel:#2b3630;
-  --nav-text:#f1f5f2;
-  --nav-muted:#b8c7bf;
-  --nav-line:#46534c;
-  --nav-active-bg:#dcebe2;
-  --nav-active-text:#234c38;
-  --topbar-bg:#f9faf8;
-  --topbar-text:#24322e;
-  --topbar-muted:#56635d;
-}
-html[data-contrast="high"] { --muted:#43534a; --line:#95a79b; }
 body .topbar { box-shadow:0 1px 0 color-mix(in srgb,var(--line) 55%,transparent); }
 body :is(.operator-page, .toolbox-page, .product-project-home) { --dashboard-edge: color-mix(in srgb, var(--line) 82%, var(--muted)); --dashboard-shadow: 0 1px 2px rgb(31 45 55 / 4%), 0 4px 12px rgb(31 45 55 / 5%); }
 body .operator-page > .surface,
@@ -67,21 +22,11 @@ body .activity-manager-row { border-radius: 5px; background: var(--surface-raise
 body .activity-manager-row > summary { padding-block: 9px; }
 body .activity-manager-row.is-failed { border-color: var(--danger); }
 body .activity-manager-row.is-waiting { border-color: var(--warning); }
-body.atlas-reader-body :is(.reader-toolbar, .reader-pdf-toolbar) { background: var(--surface-raised); box-shadow: 0 1px 3px rgb(31 45 55 / 5%); padding-block: 5px; }
-body :is(.operator-page, .toolbox-page, .product-project-home) .action-button,
-body.atlas-reader-body .reader-toolbar .reader-button { border-radius: 5px; min-height: 32px; padding: 6px 10px; font-family: var(--font-sans); font-size: var(--font-size-work); }
+body :is(.operator-page, .toolbox-page, .product-project-home) .action-button { border-radius: 5px; min-height: 32px; padding: 6px 10px; font-family: var(--font-sans); font-size: var(--font-size-work); }
 body :is(.operator-page, .toolbox-page, .product-project-home) :is(.action-button-secondary, .action-button[aria-disabled="true"]) { background: var(--surface-raised); color: var(--ink); border-color: var(--line); }
-body.atlas-reader-body .reader-toolbar .reader-button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-strong); border-color: var(--accent-line); }
 body :is(.operator-page, .toolbox-page, .product-project-home) :is(.action-button-danger, .action-button-remove) { color: var(--danger-action); background: var(--danger-soft); border-color: var(--danger-action); }
-body :is(.operator-page, .toolbox-page, .product-project-home) :is(button:disabled, .is-disabled, [aria-disabled="true"]),
-body.atlas-reader-body .reader-toolbar .reader-button:disabled { opacity: .6; box-shadow: none; cursor: not-allowed; border-style: dashed; }
+body :is(.operator-page, .toolbox-page, .product-project-home) :is(button:disabled, .is-disabled, [aria-disabled="true"]) { opacity: .6; box-shadow: none; cursor: not-allowed; border-style: dashed; }
 body :is(.operator-page, .toolbox-page, .product-project-home) :is(input:read-only, textarea:read-only) { background: var(--surface-muted); border-style: dashed; }
 body :is(.operator-page, .toolbox-page, .product-project-home) .callout.warn { border-left: 3px solid var(--warning); background: var(--warning-soft); color: var(--ink); }
 body :is(.operator-page, .toolbox-page, .product-project-home) [role="alert"] { border-color: var(--danger); }
-@media (prefers-reduced-motion: no-preference) {
-  html:not([data-reduce-motion="true"]) :is(.operator-page, .toolbox-page, .product-project-home) :is(.action-button, .toolbox-tool-card),
-  html:not([data-reduce-motion="true"]) .reader-toolbar .reader-button { transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease; }
-}
-@media (prefers-reduced-motion: reduce) { body :is(.toolbox-tool-card, .reader-toolbar .reader-button) { transition: none; } }
-html[data-reduce-motion="true"] :is(.toolbox-tool-card, .reader-toolbar .reader-button) { transition: none; }
 @media (max-width: 680px) { body .operator-page > .surface { padding: 12px; } body .toolbox-page .toolbox-tool-card { padding: 12px; } }

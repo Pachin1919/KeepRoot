@@ -69,7 +69,7 @@ test('material Reader strips legacy selection from list return while preserving 
   const response = await f.get(`${f.base}/resources/read?` + new URLSearchParams({ resource_id: f.resource.resource_id, return_to: returnTo }));
   assert.equal(response.status, 200);
   const body = await response.text();
-  const returnHref = body.match(/<header class="reader-toolbar"><a class="reader-button" href="([^"]+)"/u)?.[1];
+  const returnHref = body.match(/<header class="reader-toolbar"><a class="reader-button reader-back-command" href="([^"]+)"/u)?.[1];
   assert.ok(returnHref);
   const list = new URL(returnHref.replaceAll('&amp;', '&'), 'http://atlas.local');
   assert.equal(list.searchParams.get('mode'), 'cards'); assert.equal(list.searchParams.get('folder'), 'Notes'); assert.equal(list.searchParams.get('name_contains'), 'note');

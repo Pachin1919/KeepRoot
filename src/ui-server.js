@@ -40,6 +40,8 @@ import { createDocumentUpdateService } from './document-update-service.js';
 import { renderContentLocationView } from './ui/views/content-location-view.js';
 import { createContentLocationService } from './content-location-service.js';
 import { createResourceReaderService } from './resource-reader-service.js';
+import { createReaderMonitorService } from './reader-monitor-service.js';
+import { createProjectGitService } from './project-git-service.js';
 import { Catalog } from './catalog.js';
 import { boundedRecipeDraft, toolboxErrorKey } from './ui/toolbox-flow.js';
 import { renderToolboxView } from './ui/views/toolbox-view.js';
@@ -288,7 +290,9 @@ const UI_IMAGE_ASSETS = new Map([
 
 // Fixed bundled PDF.js 6.4.299 assets; no request path is used as a filesystem path.
 const PDF_READER_ASSETS = new Map([
+  ...['back', 'edit', 'read', 'graph', 'files', 'focus', 'source', 'more', 'table'].map(name => [`/ui/reader-icons/${name}.svg`, { file: new URL(`./ui/assets/reader-icons/${name}.svg`, import.meta.url), mime: 'image/svg+xml' }]),
   ['/ui/activity-workspace.js', { file: new URL('./ui/activity-workspace.js', import.meta.url), mime: 'text/javascript; charset=utf-8' }],
+  ['/ui/reader-monitors.js', { file: new URL('./ui/reader-monitors.js', import.meta.url), mime: 'text/javascript; charset=utf-8' }],
   ['/ui/resource-graph.js', { file: new URL('./ui/resource-graph.js', import.meta.url), mime: 'text/javascript; charset=utf-8' }],
   ['/ui/reader-editor.js', { file: new URL('./ui/reader-editor.js', import.meta.url), mime: 'text/javascript; charset=utf-8' }],
   ['/assets/codemirror/reader-editor.js', { file: new URL('./vendor/codemirror/reader-editor.js', import.meta.url), mime: 'text/javascript; charset=utf-8' }],
@@ -434,6 +438,13 @@ export async function startAtlasUiServer({
   const ownsResourceControl = !injectedResourceControl;
   const contentLocations = registry ? createContentLocationService({ registry, resourceControl, installationRoot }) : null;
   const resourceReader = registry ? createResourceReaderService({ registry, resourceControl, installationRoot }) : null;
+  const projectGit = registry ? createProjectGitService({ registry }) : null;
+  const readerMonitors = registry ? createReaderMonitorService({ registry, resourceControl, stateDir }) : null;
+  const readerMonitorModel = (projectId, resourceId, unavailable = false) => {
+    if (unavailable || !readerMonitors) return { monitorError: 'Resource activity metadata is unavailable.' };
+    try { return { monitorSnapshot: readerMonitors.read({ projectId, resourceId }) }; }
+    catch { return { monitorError: 'Resource activity metadata is unavailable in this Project.' }; }
+  };
   const saveService = intake ? createSaveService({ stateDir, intake, resourceControl }) : null;
   const localModules = createLocalModuleService({ stateDir, registry, resourceControl, saveService });
   const localModulePackagePreviews = new Map();
@@ -1370,7 +1381,7 @@ export async function startAtlasUiServer({
           return;
         }
       }
-      if (['/ui/pdf-reader.js','/ui/reader-editor.js','/ui/resource-graph.js','/ui/activity-workspace.js'].includes(url.pathname) || url.pathname.startsWith('/assets/pdfjs/') || url.pathname.startsWith('/assets/codemirror/')) {
+      if (['/ui/pdf-reader.js','/ui/reader-editor.js','/ui/reader-monitors.js','/ui/resource-graph.js','/ui/activity-workspace.js'].includes(url.pathname) || url.pathname.startsWith('/assets/pdfjs/') || url.pathname.startsWith('/assets/codemirror/') || url.pathname.startsWith('/ui/reader-icons/')) {
         const asset = PDF_READER_ASSETS.get(url.pathname);
         if (request.method !== 'GET' || url.search || !asset) { response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); response.end('Asset unavailable.'); return; }
         try {
@@ -2940,7 +2951,7 @@ export async function startAtlasUiServer({
         const manualResource=manualResources.find(value=>value.resource_id===resourceId);
         const renderManual = (manual,notice=null,status=200) => sendPage(response,status,renderResourceReaderView({project:entry.project,
           reader:{resource_id:resourceId,name:path.basename(manual.inspected?.relative_path ?? manual.update?.resource?.relative_path ?? manualResource?.relative_path ?? resourceId),relative_path:manual.inspected?.relative_path ?? manual.update?.resource?.relative_path ?? manualResource?.relative_path ?? '',bytes:manual.inspected?.baseline?.bytes ?? manual.update?.current?.bytes,sha256:manual.inspected?.baseline?.sha256 ?? manual.update?.current?.sha256,kind:'text'},
-          returnHref,detailsHref:returnHref,manual:{...manual,notice,readHref,readerUpdateId},resources:manualResources}, {csrfToken,...displayOptions()}));
+          returnHref,detailsHref:returnHref,manual:{...manual,notice,readHref,readerUpdateId},resources:manualResources,...readerMonitorModel(entry.project.id,resourceId,Boolean(notice))}, {csrfToken,...displayOptions()}));
         let inspected = null, update = null;
         try {
           const requestedReceipt=form.get('reader_update_id');
@@ -2975,6 +2986,16 @@ export async function startAtlasUiServer({
           if (update?.update_id) { try { update=documentUpdate.show(update.update_id,{projectId:entry.project.id}); } catch {} }
           renderManual({inspected,update,...(operation === 'preview' ? {text:String(form.get('text') ?? ''),expectedSha256:String(form.get('expected_sha256') ?? ''),expectedFileId:String(form.get('expected_file_id') ?? '')} : {}),requestKey:'manual-retry:' + crypto.randomUUID()},safeNotice(error),409); return;
         }
+      }
+      const readerMonitorMatch = url.pathname.match(/^\/projects\/([^/]+)\/resources\/monitors$/u);
+      if (readerMonitorMatch) {
+        if (request.method !== 'GET') { sendJson(response, 405, { ok: false, error: 'Use GET to read Resource metadata.' }); return; }
+        try {
+          if (!readerMonitors) throw new Error('Unavailable');
+          const snapshot = readerMonitors.read({ projectId: decodeURIComponent(readerMonitorMatch[1]), resourceId: url.searchParams.get('resource_id') ?? '' });
+          sendJson(response, 200, { ok: true, ...snapshot });
+        } catch { sendJson(response, 409, { ok: false, error: 'Resource activity metadata is unavailable in this Project.' }); }
+        return;
       }
       const resourceReaderMatch = url.pathname.match(/^\/projects\/([^/]+)\/resources\/(read|read-image|read-pdf)$/u);
       const readerIndexMatch = url.pathname.match(/^\/projects\/([^/]+)\/search-index$/u);
@@ -3077,7 +3098,7 @@ export async function startAtlasUiServer({
           if (readerModel.focused_resource) resourceFocusGraph = buildResourceFocusGraph({projectId,
             resource: readerModel.focused_resource, relationshipFocus: relationships, impactLanes: readerModel.focused_resource.impact_lanes});
         }
-        sendPage(response, status, renderResourceReaderView({ project, reader, resources, returnHref, detailsHref, notice, links, relationships, relationshipNotice, relatedWorks, resourceFocusGraph, graphMode: url.searchParams.get('graph') === '1', handoffRequestKey: 'reader-handoff:' + crypto.randomUUID(), manualUpdate }, { csrfToken, ...displayOptions() }));
+        sendPage(response, status, renderResourceReaderView({ project, reader, resources, returnHref, detailsHref, notice, links, relationships, relationshipNotice, relatedWorks, resourceFocusGraph, graphMode: url.searchParams.get('graph') === '1', handoffRequestKey: 'reader-handoff:' + crypto.randomUUID(), manualUpdate, ...readerMonitorModel(projectId,resourceId,Boolean(notice)) }, { csrfToken, ...displayOptions() }));
         return;
       }
       const projectResourcesMatch = url.pathname.match(/^\/projects\/([^/]+)\/resources(?:\/(detail))?$/u);
@@ -4302,6 +4323,24 @@ export async function startAtlasUiServer({
         const projectId = decodeURIComponent(recoveryMatch[1]);
         const roundId = recoveryMatch[2] ? decodeURIComponent(recoveryMatch[2]) : null;
         const entry = projectEntry(projectId);
+        if (!roundId && url.searchParams.get('view') === 'git') {
+          const unavailable = notice => ({ project_id: projectId, status: 'unavailable', notice, commits: [], offset: 0, next_offset: null, selected_commit_id: null, files: [], files_truncated: false, diff: null });
+          if (request.method !== 'GET') {
+            sendPage(response, 405, renderRoundTimelineView({ project: entry.project, base: entry.base, git: unavailable('Git history is read only. Open it with GET.') }, displayOptions())); return;
+          }
+          let git;
+          const offsetText = url.searchParams.get('offset');
+          const invalidQuery = [...url.searchParams.keys()].some(key => !['view','offset','commit','file'].includes(key) || url.searchParams.getAll(key).length !== 1)
+            || (offsetText !== null && (!/^\d{1,5}$/u.test(offsetText) || Number(offsetText) > 10000));
+          if (invalidQuery) git = unavailable('Git history selection is invalid. Choose a commit from the displayed page.');
+          else {
+            try {
+              if (!projectGit) throw new Error('Unavailable');
+              git = await projectGit.read({ projectId, offset: offsetText === null ? 0 : Number(offsetText), commitId: url.searchParams.get('commit'), filePath: url.searchParams.get('file') });
+            } catch { git = unavailable('Git history is unavailable. Return to Atlas records or try again.'); }
+          }
+          sendPage(response, git.status === 'unavailable' ? 409 : 200, renderRoundTimelineView({ project: entry.project, base: entry.base, git }, displayOptions())); return;
+        }
         const recovery = new RoundRecovery({ stateDir, registry });
         const model = () => {
           const rounds = recovery.list({ projectId });

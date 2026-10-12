@@ -1,34 +1,4 @@
 /* Product chrome and Project overview. Existing operations keep their controls. */
-:root, html[data-theme="slate"] {
-  --canvas: #f4f3ef;
-  --surface: #fff;
-  --surface-raised: #fff;
-  --surface-muted: #edf0eb;
-  --ink: #25323b;
-  --muted: #606e78;
-  --line: #dbe1e5;
-  --nav-bg: #e9eee8;
-  --nav-panel: #dee6dc;
-  --nav-text: #293841;
-  --nav-muted: #5c6d77;
-  --nav-line: #d2dbd0;
-  --nav-active-bg: #dcebe2;
-  --nav-active-text: #254c39;
-  --topbar-bg: #f1e6d6;
-  --topbar-text: #25323b;
-  --topbar-muted: #606e78;
-  --body-background: none;
-  --tree-focus: #e5f0e9;
-  --shadow-soft: 0 2px 6px rgb(31 45 55 / 3%);
-  --radius-surface: 10px;
-  --radius-control: 6px;
-}
-:root {
-  --accent: #3f775d;
-  --accent-strong: #2b5942;
-  --accent-soft: #e5f0e9;
-  --accent-line: #8cab99;
-}
 body .sidebar { background: var(--nav-bg); border-color: var(--nav-line); padding: 18px 14px 12px; overflow-y: hidden; }
 body .sidebar > nav:first-of-type { flex-shrink: 0; }
 body .brand { margin: 0 8px 8px; min-height: 0; gap: 10px; background: transparent; border: 0; padding: 4px 0; }
@@ -55,7 +25,7 @@ body .sidebar-settings .nav-item { margin: 0; }
 body .sidebar-signature::before { content: none; }
 body .sidebar-signature .signature-art { display: flex; align-items: center; justify-content: start; gap: 3px; min-height: 44px; }
 body .signature-calligraphy { width: 30px; height: 44px; filter: none; opacity: .8; }
-html[data-theme="graphite"] .signature-calligraphy, html[data-theme="warm_charcoal"] .signature-calligraphy { filter: invert(92%) sepia(8%) saturate(490%) hue-rotate(352deg) brightness(106%); }
+html[data-theme="warm_charcoal"] .signature-calligraphy { filter: invert(92%) sepia(8%) saturate(490%) hue-rotate(352deg) brightness(106%); }
 body .signature-seal { width: 25px; height: 25px; }
 body .signature-copy { border: 0; margin: 0; padding: 0; gap: 4px; }
 body .signature-copy strong { color: var(--nav-muted); font: 500 11px/1.4 var(--font-sans); letter-spacing: .02em; }
@@ -142,7 +112,33 @@ body .product-project-home .project-home-continue { border-top: 3px solid var(--
 .atlas-reader-body .reader-markdown { max-width: 800px; padding-top: 20px; }
 .atlas-reader-body .reader-paper, .settings-reading-sample { font-size: var(--font-size-base); font-family: var(--reading-font); line-height: var(--reading-line-height); }
 .atlas-reader-body .topbar { min-height: 44px; height: 44px; }
-.atlas-reader-body .reader-toolbar { min-height: 44px; padding-block: 4px; gap: 6px 12px; }
+/* Tinted command families. CSS SVG icons survive the textContent toggles. */
+body.atlas-reader-body .reader-toolbar { min-height: 44px; padding: 5px 12px; gap: 6px 12px; background: var(--surface-raised); box-shadow: 0 1px 3px rgb(30 41 59 / 5%); }
+body.atlas-reader-body .reader-toolbar-actions { gap: 8px; min-width: 0; }
+body.atlas-reader-body .reader-command-group { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+body.atlas-reader-body .reader-document-commands:empty { display: none; }
+body.atlas-reader-body .reader-document-commands:not(:empty) + .reader-view-commands { border-left: 1px solid var(--line); padding-left: 8px; }
+body.atlas-reader-body .reader-toolbar .reader-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 5px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); font-family: var(--font-sans); font-size: var(--font-size-work); box-shadow: none; white-space: nowrap; }
+body.atlas-reader-body .reader-toolbar .reader-button:hover { background: var(--surface-muted); color: var(--ink); border-color: var(--line); }
+body.atlas-reader-body .reader-toolbar .reader-command-primary { background: var(--document-command); color: #fff; border-color: var(--document-command); font-weight: 600; box-shadow: 0 1px 3px rgb(29 78 216 / 18%), inset 0 1px 0 rgb(255 255 255 / 15%); }
+body.atlas-reader-body .reader-toolbar .reader-command-primary:hover { background: #1e40af; color: #fff; border-color: #1e40af; }
+body.atlas-reader-body .reader-toolbar .reader-button:is([aria-pressed="true"], [aria-expanded="true"]) { background: var(--surface-muted); color: var(--ink); border-color: var(--line); }
+body.atlas-reader-body .reader-toolbar .reader-command-primary[aria-current="true"] { background: var(--document-command); color: #fff; border-color: var(--document-command); }
+body.atlas-reader-body .reader-toolbar [data-reader-graph-toggle] { background: var(--window-command-soft); color: var(--window-command); border-color: var(--window-command-line); }
+body.atlas-reader-body .reader-toolbar [data-reader-graph-toggle]:is(:hover, [aria-pressed="true"]) { background: var(--window-command); color: #fff; border-color: var(--window-command); box-shadow: inset 0 1px 0 rgb(255 255 255 / 15%); }
+body.atlas-reader-body .reader-toolbar .reader-view-commands .reader-button { color: var(--window-command); }
+body.atlas-reader-body .reader-toolbar .reader-view-commands .reader-button:is(:hover, [aria-pressed="true"], [aria-expanded="true"]) { background: var(--window-command-soft); color: var(--window-command); border-color: var(--window-command-line); }
+body.atlas-reader-body .reader-toolbar .reader-button:disabled { opacity: .6; cursor: not-allowed; border-style: dashed; }
+body.atlas-reader-body .reader-toolbar .reader-button:where(.reader-back-command, .reader-command-primary, [data-reader-graph-toggle], [data-reader-files-toggle], [data-reader-focus-toggle], [data-reader-source-toggle], summary)::before { content: ''; width: 16px; height: 16px; flex: none; background: currentColor; mask: var(--reader-command-icon) center / contain no-repeat; }
+body.atlas-reader-body .reader-pdf-toolbar { background: var(--surface-raised); }
+@media (max-width: 900px) {
+  body.atlas-reader-body .reader-toolbar-actions { flex-basis: 100%; margin-left: 0; padding-top: 4px; border-top: 1px solid var(--line); }
+  body.atlas-reader-body .reader-toolbar h1 { min-width: 100px; }
+}
+@media (max-width: 540px) {
+  body.atlas-reader-body .reader-toolbar-actions { gap: 6px; }
+  body.atlas-reader-body .reader-document-commands:not(:empty) + .reader-view-commands { border-left: 0; padding-left: 0; }
+}
 .atlas-reader-body .reader-toolbar h1 { font-size: var(--font-size-base); font-weight: 600; }
 .atlas-reader-body .reader-button { font-size: var(--font-size-work); min-height: 36px; padding: 6px 10px; border-radius: var(--radius-control); }
 .atlas-reader-body .reader-button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-strong); }
@@ -171,7 +167,6 @@ body .product-project-home .project-home-continue { border-top: 3px solid var(--
 .settings-more { padding: 16px 20px; }
 .settings-more > summary { cursor: pointer; font-weight: 600; }
 .settings-more[open] > summary { margin-bottom: 18px; }
-.swatch-slate { background: linear-gradient(135deg, #e9eee8 0 35%, #fff 35% 68%, #df8a70 68%); }
 .settings-overlay-card { --settings-inset: 24px; padding: var(--settings-inset); }
 .settings-layout, .settings-main, .settings-side { min-width: 0; }
 .settings-action-bar { background: var(--surface); border-top: 1px solid var(--line); bottom: calc(-1 * var(--settings-inset)); display: flex; flex-wrap: wrap; gap: 10px; grid-column: 1 / -1; margin: 0 calc(-1 * var(--settings-inset)) calc(-1 * var(--settings-inset)); padding: 16px var(--settings-inset); position: sticky; z-index: 2; }
@@ -370,7 +365,7 @@ body .is-compact-app-rail .brand-mark .product-mark { width: 24px; height: 24px;
 .toolbox-catalog-grid { display:grid; gap:14px; }
 .toolbox-catalog-grid.is-conversion { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .toolbox-catalog-grid.is-analysis { grid-template-columns:repeat(3,minmax(0,1fr)); }
-.toolbox-tool-card { position:relative; display:flex; align-items:flex-start; gap:15px; padding:22px; min-width:0; border:1px solid var(--line); border-radius:12px; background:var(--surface); text-decoration:none; color:var(--ink); transition:border-color .15s,background .15s; }
+.toolbox-tool-card { position:relative; display:flex; align-items:flex-start; gap:15px; padding:22px; min-width:0; border:1px solid var(--line); border-radius:12px; background:var(--surface); text-decoration:none; color:var(--ink); }
 .toolbox-tool-card:hover,.toolbox-tool-card.is-selected { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 5%,var(--surface)); }
 .toolbox-tool-card:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
 .toolbox-tool-icon { flex:none; display:grid; place-items:center; width:42px; height:42px; border-radius:10px; background:var(--surface-muted); color:var(--accent); }
@@ -396,7 +391,6 @@ body .is-compact-app-rail .brand-mark .product-mark { width: 24px; height: 24px;
 .toolbox-permissions p { max-width:75ch; line-height:1.6; }
 @media(max-width:1050px) { .toolbox-catalog-grid.is-analysis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:720px) { .toolbox-catalog-grid.is-conversion,.toolbox-catalog-grid.is-analysis { grid-template-columns:minmax(0,1fr); } .toolbox-tool-card { padding:18px; } .toolbox-group-heading { align-items:flex-start; } }
-@media(prefers-reduced-motion:reduce) { .toolbox-tool-card { transition:none; } }
 .toolbox-tools,.toolbox-materials,.reader-task-actions,.reader-edit-switch { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
 .toolbox-materials { align-items:stretch; margin:12px 0; }
 .toolbox-materials label { flex:1 1 280px; padding:12px; border:1px solid var(--line); border-radius:8px; overflow-wrap:anywhere; }
@@ -433,10 +427,8 @@ body .is-compact-app-rail .brand-mark .product-mark { width: 24px; height: 24px;
 .reader-diff-before { color:#a3323c; }
 .reader-diff-after { color:#25633f; }
 .reader-diff-fallback { width:100%; min-height:35vh; }
-.reader-toolbar .reader-button,.reader-edit .reader-button { transition:background-color 150ms ease,color 150ms ease; }
 .search-index-state { margin-block:16px; }
 .search-index-state p { margin-block:0 10px; }
-@media(prefers-reduced-motion:reduce) { .reader-toolbar .reader-button,.reader-edit .reader-button { transition:none; } }
 @media(max-width:640px) { .reader-edit .cm-editor { min-height:45vh; max-height:65vh; } .reader-toolbar-actions { flex-wrap:wrap; } }
 .reader-text-editor { width:100%; min-height:55vh; resize:vertical; font-family:var(--font-sans); font-size:var(--font-size-base); line-height:var(--reading-line-height); padding:16px; margin:12px 0; box-sizing:border-box; }
 .reader-edit-versions { display:block; margin:18px 0; }
@@ -490,10 +482,14 @@ body .is-compact-app-rail .brand-mark .product-mark { width: 24px; height: 24px;
 .resource-graph { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--surface); }
 .graph-toolbar { display:flex; flex:none; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 12px; border-bottom:1px solid var(--line); font-size:13px; }
 .graph-toolbar strong { margin-right:auto; }
+.graph-tool-group { display:flex; align-items:center; gap:3px; padding:2px; border:1px solid var(--window-command-line); border-radius:5px; background:var(--window-command-soft); }
 .graph-toolbar label { display:flex; align-items:center; gap:6px; }
 .graph-toolbar select { width:auto; padding:4px 6px; }
 .graph-toolbar output { width:44px; text-align:center; font-variant-numeric:tabular-nums; }
-.graph-toolbar .reader-button { padding:5px 10px; min-height:30px; }
+.graph-toolbar .reader-button { display:inline-flex; align-items:center; gap:4px; padding:5px 8px; min-height:30px; border:1px solid transparent; border-radius:4px; background:transparent; color:var(--window-command); font-size:var(--font-size-small); box-shadow:none; }
+.graph-toolbar .reader-button:hover { background:var(--surface-raised); border-color:var(--window-command-line); }
+.graph-toolbar .reader-button:disabled { opacity:.6; cursor:not-allowed; border-style:dashed; }
+.graph-control-icon { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.7; flex:none; }
 .graph-help { margin:0; padding:7px 12px; font-size:11px; color:var(--muted); background:var(--surface-muted); }
 .graph-stage { display:block; width:100%; flex:1; min-height:220px; background-color:var(--surface); background-image:radial-gradient(var(--line) .8px,transparent .8px); background-size:20px 20px; touch-action:none; cursor:grab; user-select:none; }
 .graph-stage:active { cursor:grabbing; }
@@ -610,8 +606,6 @@ body .action-button-danger, body .action-button-remove { color: var(--danger-act
 body .action-button-danger:hover, body .action-button-remove:hover { color: var(--danger-action); background: var(--danger-soft); border-color: var(--danger-action); }
 body .action-button:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 3px; }
 @supports (backdrop-filter: blur(4px)) { body .action-button { backdrop-filter: blur(4px); } }
-html[data-reduce-motion="true"] .action-button { transition: none; transform: none; }
-@media (prefers-reduced-motion: reduce) { body .action-button { transition: none; transform: none; } }
 /* Root-owned document hooks retain a fixed content hierarchy. */
 .board-purpose { color: var(--muted); font: var(--font-size-work)/1.65 var(--font-sans); margin: 6px 0 12px; max-width: 76ch; }
 .archive-timeline { display: grid; gap: 10px; min-width: 0; }
@@ -627,9 +621,6 @@ html[lang="zh-CN"] h1, html[lang="zh-CN"] h2, html[lang="zh-CN"] h3 { letter-spa
 .setting-field textarea[name="language_pack"] { font-family: var(--font-mono); }
 .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip-path: inset(50%); white-space: nowrap !important; border: 0 !important; }
 .atlas-reader-body .reader-edit:has(.reader-text-editor) > .reader-edit-switch { display: none; }
-.atlas-reader-body .reader-toolbar .reader-button { color: var(--accent-strong); border-color: var(--accent-line); background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 65%, white), color-mix(in srgb, var(--accent-soft) 85%, transparent)); box-shadow: inset 0 1px rgb(255 255 255 / 70%), 0 1px 3px rgb(31 45 55 / 7%); }
-.atlas-reader-body .reader-toolbar .reader-button:hover { background: var(--accent-soft); }
-@supports (backdrop-filter: blur(4px)) { .atlas-reader-body .reader-toolbar .reader-button { backdrop-filter: blur(4px); } }
 .rules-page .rule-document dl { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 10px 16px; }
 .rules-page .rule-document :is(dt, dd) { padding: 0; margin: 0; }
 .rules-page .rule-document dt { color: var(--muted); }
@@ -638,3 +629,14 @@ html[lang="zh-CN"] h1, html[lang="zh-CN"] h2, html[lang="zh-CN"] h3 { letter-spa
 .rules-page .surface > form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: end; }
 .rules-page form :is(input, select) { width: 100%; min-width: 0; }
 @media(max-width:760px) { .rules-page .surface > form, .rules-page .rule-review-actions form { grid-template-columns: minmax(0, 1fr); } .rules-page .rule-document dl { grid-template-columns: minmax(0,1fr); gap: 4px; } .rules-page .rule-document dd { margin-bottom: 8px; } }
+
+/* Decorative command symbols; visible command text supplies the accessible name. */
+body.atlas-reader-body .reader-toolbar .reader-back-command { --reader-command-icon: url("/ui/reader-icons/back.svg"); }
+body.atlas-reader-body .reader-toolbar [data-reader-inline-edit] { --reader-command-icon: url("/ui/reader-icons/edit.svg"); }
+body.atlas-reader-body .reader-toolbar [data-reader-inline-edit][aria-current="true"] { --reader-command-icon: url("/ui/reader-icons/read.svg"); }
+body.atlas-reader-body .reader-toolbar [data-reader-graph-toggle] { --reader-command-icon: url("/ui/reader-icons/graph.svg"); }
+body.atlas-reader-body .reader-toolbar [data-reader-files-toggle] { --reader-command-icon: url("/ui/reader-icons/files.svg"); }
+body.atlas-reader-body .reader-toolbar [data-reader-focus-toggle] { --reader-command-icon: url("/ui/reader-icons/focus.svg"); }
+body.atlas-reader-body .reader-toolbar [data-reader-source-toggle] { --reader-command-icon: url("/ui/reader-icons/source.svg"); }
+body.atlas-reader-body .reader-toolbar .reader-actions-menu > summary { --reader-command-icon: url("/ui/reader-icons/more.svg"); }
+body.atlas-reader-body .reader-toolbar .reader-process-command { --reader-command-icon: url("/ui/reader-icons/table.svg"); }

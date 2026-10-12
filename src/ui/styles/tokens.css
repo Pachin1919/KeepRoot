@@ -1,53 +1,58 @@
 :root {
   color-scheme: light;
-  --canvas: #d8d1c5;
-  --surface: rgb(245 241 232 / 92%);
-  --surface-muted: #e4dccd;
-  --surface-raised: #f7f3ea;
-  --ink: #26221d;
-  --muted: #655d52;
-  --line: #aea28f;
-  --accent: #647d62;
-  --accent-strong: #344b37;
-  --accent-soft: #d4e0cf;
-  --accent-line: #718871;
-  --warning: #9b6e08;
-  --warning-soft: #efe0af;
-  --danger: #a94230;
-  --danger-soft: #efd2c9;
-  --safe-action: #55745c;
-  --safe-action-hover: #45624d;
-  --safe-action-text: #fbf6eb;
-  --danger-action: #a94230;
-  --danger-action-hover: #873326;
-  --danger-action-text: #fff6ef;
-  --nav-bg: #292722;
-  --nav-panel: #35312a;
-  --nav-text: #f3ecdf;
-  --nav-muted: #c2b7a6;
-  --nav-line: #5d564a;
-  --nav-active-bg: #d2a629;
-  --nav-active-text: #241f17;
-  --topbar-bg: #b94b38;
-  --topbar-text: #fff4e9;
-  --topbar-muted: #f0c9bc;
-  --block-one: #e4cf82;
-  --block-two: #c8d8c5;
-  --block-three: #df8a70;
-  --tree-focus: #ead9a1;
-  --body-background:
-    linear-gradient(112deg, rgb(246 241 230 / 62%), rgb(213 196 166 / 18%) 58%, rgb(177 74 55 / 12%)),
-    radial-gradient(circle at 84% 10%, rgb(199 77 57 / 20%), transparent 24%),
-    url('/ui/atlas-paper-texture.png');
-  --shadow-soft: 0 12px 34px rgb(62 47 28 / 10%);
-  --radius-surface: 12px;
-  --radius-control: 8px;
+  --canvas: #f4f6f8;
+  --surface: #ffffff;
+  --surface-muted: #eef2f6;
+  --surface-raised: #ffffff;
+  --document-command: #1d4ed8;
+  --document-command-soft: #edf3ff;
+  --document-command-line: #a9c3f5;
+  --window-command: #0f766e;
+  --window-command-soft: #e7f5f2;
+  --window-command-line: #9ccfc5;
+  --source-edge: #64748b;
+  --processing-edge: #a16207;
+  --ink: #1e293b;
+  --muted: #475569;
+  --line: #cbd5e1;
+  --accent: #16815d;
+  --accent-strong: #126345;
+  --accent-soft: #e6f5ed;
+  --accent-line: #82bd9f;
+  --warning: #95620b;
+  --warning-soft: #fff3cf;
+  --danger: #b42335;
+  --danger-soft: #fdecef;
+  --safe-action: #267043;
+  --safe-action-hover: #1d5934;
+  --safe-action-text: #ffffff;
+  --danger-action: #b42335;
+  --danger-action-hover: #921c2b;
+  --danger-action-text: #ffffff;
+  --nav-bg: #eef2f6;
+  --nav-panel: #e2e8f0;
+  --nav-text: #26354a;
+  --nav-muted: #52647b;
+  --nav-line: #cbd5e1;
+  --nav-active-bg: var(--accent-soft);
+  --nav-active-text: var(--accent-strong);
+  --topbar-bg: #ffffff;
+  --topbar-text: #1e293b;
+  --topbar-muted: #475569;
+  --block-one: #b9cef4;
+  --block-two: #aad7c4;
+  --block-three: #c8b9ea;
+  --tree-focus: var(--accent-soft);
+  --body-background: url('/ui/atlas-paper-texture.png');
+  --shadow-soft: 0 2px 8px rgb(30 41 59 / 6%);
+  --radius-surface: 6px;
+  --radius-control: 5px;
   --font-sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   --ui-scale: 1;
   --viewport-height: calc(100dvh / var(--ui-scale));
   --viewport-width: calc(100vw / var(--ui-scale));
-  --status-safe: #45694e;
-  --status-safe-soft: #e1eddf;
+  --status-safe: #267043;
+  --status-safe-soft: #e8f4eb;
   --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
   --font-size-base: 16px;
   --font-size-work: 14px;
@@ -64,74 +69,42 @@ html[data-reading-font="mono"] { --reading-font: var(--font-mono); }
 html[data-reading-spacing="compact"] { --reading-line-height: 1.55; }
 html[data-reading-spacing="spacious"] { --reading-line-height: 1.95; }
 
+/* Persisted IDs remain compatible; these are the current surface palettes. */
 html[data-theme="graphite"] {
-  --canvas: #bdb0b5;
-  --surface: rgb(244 238 230 / 93%);
-  --surface-muted: #d8cbc9;
-  --surface-raised: #f8f1e8;
-  --ink: #2a1825;
-  --muted: #685662;
-  --line: #9d8992;
-  --nav-bg: #321a2d;
-  --nav-panel: #45243e;
-  --nav-text: #fff2e7;
-  --nav-muted: #d8bfcf;
-  --nav-line: #6d4962;
-  --nav-active-bg: #d96b52;
-  --nav-active-text: #2a1523;
-  --topbar-bg: #b9d8c2;
-  --topbar-text: #241725;
-  --topbar-muted: #594657;
-  --block-one: #d97057;
-  --block-two: #b8d5c1;
-  --block-three: #c49aaf;
-  --tree-focus: #d8c1c7;
-  --body-background:
-    linear-gradient(118deg, rgb(243 235 228 / 70%), rgb(105 58 90 / 16%) 60%, rgb(215 100 78 / 18%)),
-    radial-gradient(circle at 76% 4%, rgb(185 216 194 / 44%), transparent 25%),
-    url('/ui/atlas-paper-texture.png');
-  --shadow-soft: 0 14px 38px rgb(48 20 40 / 14%);
+  --canvas: #eaf0f7;
+  --surface-muted: #edf3f9;
+  --nav-bg: #dde7f2;
+  --nav-panel: #cedbea;
+  --nav-text: #20344f;
+  --nav-muted: #475f7d;
+  --nav-line: #b8c9dc;
+  --topbar-bg: #f5f8fc;
 }
 html[data-theme="warm_charcoal"] {
-  --canvas: #cbc9be;
-  --surface: rgb(244 241 232 / 94%);
-  --surface-muted: #dcd9cc;
-  --surface-raised: #faf6ec;
-  --ink: #242722;
-  --muted: #5e645b;
-  --line: #9da096;
-  --nav-bg: #222821;
-  --nav-panel: #30382f;
-  --nav-text: #f5f0e4;
-  --nav-muted: #bdc6b9;
-  --nav-line: #535d51;
-  --nav-active-bg: #c6523e;
-  --nav-active-text: #fff4e9;
-  --topbar-bg: #d2a629;
-  --topbar-text: #242117;
-  --topbar-muted: #65521b;
-  --block-one: #c8d1bb;
-  --block-two: #e0bb4f;
-  --block-three: #cc6954;
-  --tree-focus: #d9dfcc;
-  --body-background:
-    linear-gradient(100deg, rgb(245 242 234 / 72%), rgb(91 105 86 / 12%) 64%, rgb(208 166 41 / 18%)),
-    radial-gradient(circle at 82% 8%, rgb(208 166 41 / 30%), transparent 23%),
-    url('/ui/atlas-paper-texture.png');
-  --shadow-soft: 0 12px 34px rgb(34 40 33 / 12%);
+  --canvas: #f2f5fa;
+  --surface-muted: #edf2f8;
+  --nav-bg: #172b45;
+  --nav-panel: #213b5c;
+  --nav-text: #f4f7fc;
+  --nav-muted: #bdcce0;
+  --nav-line: #3c536f;
+  --nav-active-bg: #2d486c;
+  --nav-active-text: #ffffff;
+  --topbar-bg: #ffffff;
 }
-html[data-contrast="standard"] { --muted: #81776c; --line: #bbb09f; }
+html[data-contrast="standard"] { --muted: #64748b; --line: #dbe3ec; }
+html[data-contrast="high"] { --muted: #475569; --line: #aebdcd; }
 html[data-accent="vermilion"] {
-  --accent: #476781;
-  --accent-strong: #2d4b65;
-  --accent-soft: #e2eaf1;
-  --accent-line: #8ca4b8;
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
+  --accent-soft: #eaf1ff;
+  --accent-line: #a3bffa;
 }
 html[data-accent="amber"] {
-  --accent: #795b79;
-  --accent-strong: #593e5b;
-  --accent-soft: #eee4ee;
-  --accent-line: #b299b4;
+  --accent: #7c3aed;
+  --accent-strong: #6430a8;
+  --accent-soft: #f2ebff;
+  --accent-line: #c2a8ed;
 }
 html[data-text-size="compact"] {
   --font-size-base: 14px;

@@ -266,10 +266,10 @@ html[data-technical-ids="hidden"] .technical-id { display: none !important; }
 .setting-choice strong, .setting-choice small { display: block; }
 .setting-choice small { color: var(--muted); font-size: var(--font-size-small); line-height: 1.4; }
 .setting-swatch { border: 1px solid var(--line); border-radius: 50%; display: block; height: 22px; margin-bottom: 5px; width: 22px; }
-.swatch-slate { background: linear-gradient(135deg, #292722 0 35%, #b94b38 35% 62%, #d2a629 62%); }
-.swatch-graphite { background: linear-gradient(135deg, #321a2d 0 35%, #b9d8c2 35% 68%, #d96b52 68%); }
-.swatch-warm { background: linear-gradient(135deg, #222821 0 35%, #d2a629 35% 66%, #c8d1bb 66%); }
-.swatch-green { background: #647d62; }.swatch-vermilion { background: #476781; }.swatch-amber { background: #795b79; }
+.swatch-slate { background: linear-gradient(135deg, #eef2f6 0 35%, #ffffff 35% 68%, #cbd5e1 68%); }
+.swatch-graphite { background: linear-gradient(135deg, #dde7f2 0 35%, #ffffff 35% 68%, #eaf0f7 68%); }
+.swatch-warm { background: linear-gradient(135deg, #172b45 0 35%, #ffffff 35% 68%, #f2f5fa 68%); }
+.swatch-green { background: #16815d; }.swatch-vermilion { background: #2563eb; }.swatch-amber { background: #7c3aed; }
 .setting-field { color: var(--muted); display: grid; font-size: var(--font-size-small); font-weight: 600; gap: 7px; margin-top: 20px; }
 .setting-field input, .setting-field select { background: var(--surface-muted); border: 1px solid var(--line); border-radius: var(--radius-control); color: var(--ink); font: var(--font-size-base) var(--font-sans); min-height: 44px; padding: 0 11px; width: 100%; }
 .setting-field small { font-weight: 400; }
@@ -643,9 +643,13 @@ body .action-button-remove:hover { background: var(--danger-action); border-colo
 .activity-manager-error { color: var(--danger); }
 .activity-manager-empty { color: var(--muted); font-size: var(--font-size-small); padding: 4px 10px; }
 @media (max-width: 1100px) {
-  .activity-manager-row > summary { grid-template-columns: 5px minmax(0, 1fr) auto; }
-  .activity-manager-initiator { grid-column: 2; }
-  .activity-manager-row time { grid-column: 3; grid-row: 2; }
+  .activity-manager-row > summary { grid-template-columns: 5px minmax(0, 1fr) auto auto; gap: 5px 8px; }
+  .activity-manager-mark { grid-column: 1; grid-row: 1 / 3; }
+  .activity-manager-resource { grid-column: 2; grid-row: 1; }
+  .activity-manager-status { grid-column: 3; grid-row: 1; }
+  .activity-manager-initiator { grid-column: 2; grid-row: 2; }
+  .activity-manager-row time { grid-column: 3 / 5; grid-row: 2; text-align: right; }
+  .activity-monitor-trigger { grid-column: 4; grid-row: 1; }
   .activity-manager-detail { display: grid; padding-left: 27px; }
 }
 html[data-density="compact"] .workspace-tree-root-row,
@@ -1152,6 +1156,9 @@ body.atlas-reader-body { overflow: hidden; }
 .activity-inspector { grid-column: 2; grid-row: 2; min-width: 0; min-height: 0; overflow: auto; border-left: 1px solid var(--line); padding-left: 12px; }
 .activity-inspector[hidden], .activity-monitor[hidden] { display: none !important; }
 .activity-workbench[data-inspector-open="true"] > .activity-manager .activity-manager-row > summary { grid-template-columns: 4px minmax(0, 1fr) auto auto; gap: 4px 8px; }
+.activity-workbench[data-inspector-open="true"] > .activity-manager .activity-manager-mark { grid-column: 1; grid-row: 1 / 3; }
+.activity-workbench[data-inspector-open="true"] > .activity-manager .activity-manager-resource { grid-column: 2; grid-row: 1; }
+.activity-workbench[data-inspector-open="true"] > .activity-manager .activity-manager-status { grid-column: 3; grid-row: 1; }
 .activity-workbench[data-inspector-open="true"] > .activity-manager .activity-manager-initiator { grid-column: 2; grid-row: 2; }
 .activity-workbench[data-inspector-open="true"] > .activity-manager .activity-manager-row time { grid-column: 3 / 5; grid-row: 2; text-align: right; }
 .activity-workbench[data-inspector-open="true"] > .activity-manager .activity-monitor-trigger { grid-column: 4; grid-row: 1; }
@@ -1162,7 +1169,7 @@ body.atlas-reader-body { overflow: hidden; }
 .activity-manager-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
 .activity-workbench .activity-manager-section { padding-top: 8px; }
 .activity-manager-toolbar .activity-manager-connection { margin-left: auto; }
-.activity-monitor-trigger { display: none; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); font: inherit; font-size: var(--font-size-small); cursor: pointer; padding: 4px 8px; white-space: nowrap; }
+.activity-monitor-trigger { display: none; align-items: center; justify-content: center; min-width: max-content; min-height: 32px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); font: inherit; font-size: var(--font-size-small); cursor: pointer; padding: 4px 8px; white-space: nowrap; }
 [data-activity-workbench-ready] .activity-monitor-trigger { display: inline-flex; }
 .activity-monitor-trigger:hover, .activity-monitor-trigger:focus-visible { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
 .activity-technical { flex-basis: 100%; min-width: 0; }
@@ -1177,8 +1184,12 @@ body.atlas-reader-body { overflow: hidden; }
 .activity-monitor-header button { font: inherit; font-size: 20px; line-height: 1; width: 30px; height: 30px; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
 .activity-monitor-body { overflow: auto; min-height: 0; padding: 10px; font-size: var(--font-size-work); }
 .activity-monitor-body .activity-manager-row > summary { grid-template-columns: 4px minmax(0, 1fr) auto; }
-.activity-monitor-body .activity-manager-initiator { grid-column: 2; }
-.activity-monitor-body .activity-manager-row time { grid-column: 2 / -1; }
+.activity-monitor-body .activity-manager-mark { grid-column: 1; grid-row: 1 / 4; }
+.activity-monitor-body .activity-manager-resource { grid-column: 2; grid-row: 1; }
+.activity-monitor-body .activity-manager-status { grid-column: 3; grid-row: 1; }
+.activity-monitor-body .activity-manager-initiator { grid-column: 2; grid-row: 2; }
+.activity-monitor-body .activity-monitor-trigger { grid-column: 3; grid-row: 2; }
+.activity-monitor-body .activity-manager-row time { grid-column: 2 / -1; grid-row: 3; }
 .activity-monitor-body .activity-manager-detail { display: grid; padding: 10px 12px; gap: 10px; }
 .activity-monitor-body .activity-manager-section { border-top: 0; padding: 0; }
 @media (prefers-reduced-motion: no-preference) {

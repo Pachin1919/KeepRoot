@@ -1,4 +1,43 @@
 let readerSelectionTimer = null;
+// Optional feedback observes only window boundaries, never editor/graph internals.
+function initWorkbenchMotion(doc = document, win = window) {
+  const root = doc.querySelector('[data-reader-monitors]');
+  if (!root || typeof win.MutationObserver !== 'function') return null;
+  const preference = win.matchMedia('(prefers-reduced-motion: reduce)');
+  const panels = ['#reader-content', '#reader-graph', '#reader-source', '#reader-activity-monitor', '#reader-files']
+    .map(selector => root.querySelector(selector)).filter(Boolean);
+  const running = new Map();
+  let disposed = false;
+  const reduced = () => preference.matches || doc.documentElement.dataset.reduceMotion === 'true';
+  const stop = () => { for (const animation of running.values()) animation.cancel(); running.clear(); };
+  const reveal = panel => {
+    running.get(panel)?.cancel(); running.delete(panel);
+    if (disposed || reduced() || panel.hidden || !panel.getClientRects().length || typeof panel.animate !== 'function') return;
+    const animation = panel.animate([{ opacity: 0.6, transform: 'translateY(4px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 160, easing: 'ease-out' });
+    running.set(panel, animation);
+    animation.onfinish = () => { if (running.get(panel) === animation) running.delete(panel); };
+  };
+  const observer = new win.MutationObserver(changes => {
+    const changed = new Set();
+    for (const change of changes) {
+      if (change.target === root) { for (const panel of panels) changed.add(panel); }
+      else if (panels.includes(change.target) && (change.type === 'attributes' || change.target.id === 'reader-content')) changed.add(change.target);
+    }
+    for (const panel of changed) reveal(panel);
+  });
+  observer.observe(root, { attributes: true, attributeFilter: ['class', 'data-reader-monitor-layout', 'data-reader-monitor-mode'] });
+  for (const panel of panels) {
+    observer.observe(panel, { attributes: true, attributeFilter: ['hidden'], childList: panel.id === 'reader-content' });
+  }
+  const settings = new win.MutationObserver(() => { if (reduced()) stop(); });
+  settings.observe(doc.documentElement, { attributes: true, attributeFilter: ['data-reduce-motion'] });
+  const preferenceChanged = () => { if (reduced()) stop(); };
+  preference.addEventListener?.('change', preferenceChanged);
+  const dispose = () => { disposed = true; stop(); observer.disconnect(); settings.disconnect(); preference.removeEventListener?.('change', preferenceChanged); };
+  win.addEventListener('pagehide', dispose, { once: true });
+  return { dispose };
+}
+
 function navigateResourceReader(href) {
   window.clearTimeout(readerSelectionTimer);
   const url = new URL(href, window.location.origin);
@@ -1614,3 +1653,5 @@ try {
     }
   }
 } catch {}
+
+if (typeof window.MutationObserver === 'function') initWorkbenchMotion();

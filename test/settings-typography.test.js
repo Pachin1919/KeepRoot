@@ -8,6 +8,19 @@ import { normalizeUiPreferences, readUiPreferences, uiPreferencesPath, writeUiPr
 import { renderSettingsView } from '../src/ui/views/settings-view.js';
 import { uiStyles } from '../src/ui/styles.js';
 
+test('Settings names the neutral palettes while retaining persisted IDs and independent accent choices', () => {
+  for (const [locale, names] of [['en', ['Bright white', 'Cool blue-grey', 'Navy navigation', 'Green', 'Blue', 'Purple']], ['zh-CN', ['明亮白', '冷蓝灰', '深蓝导航', '绿色', '蓝色', '紫色']]]) {
+    const html = renderSettingsView({ preferences: normalizeUiPreferences({ locale, theme: 'graphite', accent: 'vermilion' }) });
+    const body = html.slice(html.indexOf('<body'));
+    for (const name of names) assert.ok(body.includes(`<strong>${name}</strong>`));
+    assert.match(body, /name="theme" value="graphite" checked/u);
+    assert.match(body, /name="accent" value="vermilion" checked/u);
+    for (const id of ['slate', 'graphite', 'warm_charcoal']) assert.ok(body.includes(`name="theme" value="${id}"`));
+    for (const id of ['green', 'vermilion', 'amber']) assert.ok(body.includes(`name="accent" value="${id}"`));
+    assert.doesNotMatch(body, /Post-Internet Plum|梅紫界面|鼠尾草导航|墨绿导航/u);
+  }
+});
+
 test('local CJK typography separates UI, explicit reading choices and code in both Settings previews', () => {
   const css = uiStyles();
   assert.match(css, /--font-sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif/u);
@@ -40,8 +53,8 @@ test('paper and button hierarchy retain keyboard focus and reduced motion withou
   assert.match(css, /body\.atlas-reader-body \.reader-paper[^}]+background-color: var\(--surface-raised\)/u);
   assert.match(css, /body \.action-button:focus-visible[^}]+outline: 2px solid var\(--accent-strong\)/u);
   assert.match(css, /@supports \(backdrop-filter: blur\(4px\)\) \{ body \.action-button/u);
-  assert.match(css, /html\[data-reduce-motion="true"\] \.action-button \{ transition: none; transform: none; \}/u);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ body \.action-button/u);
+  assert.match(css, /html\[data-reduce-motion="true"\] :is\([^)]*\.action-button[^)]*\) \{ transition: none; transform: none; \}/u);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*@view-transition \{ navigation: none; \}\s*body :is\([^)]*\.action-button[^)]*\) \{ transition: none; transform: none; \}/u);
   assert.doesNotMatch(css, /reader-paper[^{}]*\{[^}]*backdrop-filter/u);
 });
 

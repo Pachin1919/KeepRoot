@@ -7,7 +7,7 @@ import { translateUi } from '../i18n.js';
 import { uiStyles } from '../styles.js';
 
 function radio(name, value, label, description, selected, swatch = null) {
-  return `<label class="setting-choice"><input type="radio" name="${escapeHtml(name)}" value="${escapeHtml(value)}"${value === selected ? ' checked' : ''}><span>${swatch ? `<i class="setting-swatch ${escapeHtml(swatch)}"></i>` : ''}<strong>${escapeHtml(label)}</strong><small>${escapeHtml(description)}</small></span></label>`;
+  return `<label class="setting-choice"><input type="radio" name="${escapeHtml(name)}" value="${escapeHtml(value)}"${value === selected ? ' checked' : ''}><span>${swatch ? `<i class="setting-swatch ${escapeHtml(swatch)}" aria-hidden="true"></i>` : ''}<strong>${escapeHtml(label)}</strong><small>${escapeHtml(description)}</small></span></label>`;
 }
 
 function option(value, label, selected) {
