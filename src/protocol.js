@@ -200,6 +200,9 @@ export const CAPABILITIES = Object.freeze({
   },
   table_work: {
     session: 'persistent_project_work_session',
+    show_views: ['full', 'summary'],
+    host_readback: 'atlas table-work show <session_id> --summary --json',
+    summary_checks: 'same_source_and_result_checks_as_full_show',
     source_formats: ['csv', 'xlsx'],
     semantic_authority: 'user_or_host_proposal',
     deterministic_execution: 'atlas_local_processor',

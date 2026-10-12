@@ -44,7 +44,6 @@ import {
   startDesktopUi,
 } from '../src/desktop-ui-component.js';
 import { openLocalUi } from '../src/ui-launcher.js';
-import { startAtlasUiServer } from '../src/ui-server.js';
 import { createDataWorkService } from '../src/ui/services/data-work-service.js';
 import { buildResourceFocusGraph, buildResourceImpactLanes } from '../src/ui/services/resource-impact-service.js';
 import { createSavedWorkService } from '../src/ui/services/saved-work-service.js';
@@ -232,7 +231,7 @@ Usage:
   atlas table-work start --project <project_id> --source <path> [--source <path> ...]
                          [--intent <work_goal>]
   atlas table-work list --project <project_id> [--limit <1..100>] [--offset <number>]
-  atlas table-work show <session_id>
+  atlas table-work show <session_id> [--summary]
   atlas table-work reuse <session_id> --base-revision <revision> --request-file <assignments.json> --tool <tool> --client-run-id <id> [--intent <text>]
   atlas table-work reconcile <session_id> --source-key <source_key>
                              --decision <use-current|pin-recorded|follow-latest|stop-using>
@@ -409,7 +408,7 @@ Current product:
   atlas table-work start --project <project_id> --source <path> [--source <path> ...]
                          [--intent <work_goal>]
   atlas table-work list --project <project_id> [--limit <1..100>] [--offset <number>]
-  atlas table-work show <session_id>
+  atlas table-work show <session_id> [--summary]
   atlas table-work reuse <session_id> --base-revision <revision> --request-file <assignments.json> --tool <tool> --client-run-id <id> [--intent <text>]
   atlas table-work reconcile <session_id> --source-key <source_key> --decision <use-current|pin-recorded|follow-latest|stop-using>
                              --base-revision <revision> --tool <tool> --client-run-id <id>
@@ -2131,6 +2130,7 @@ function parseTableWork(args) {
     const token = rest[index];
     if (action === 'decide' && token.startsWith('UPD-')) options.updateId = token;
     else if (token === '--project') options.projectId = rest[++index];
+    else if (token === '--summary' && action === 'show') options.summary = true;
     else if (token === '--limit') options.limit = Number(rest[++index]);
     else if (token === '--offset') options.offset = Number(rest[++index]);
     else if (token === '--intent') options.intent = rest[++index];
@@ -2243,7 +2243,7 @@ async function handleTableWork(registry, saveService, args, moduleAvailability =
     if (!sessionId || options.positional.length !== 1) throw new Error(`table-work ${action} requires one session_id.`);
     const { entry } = sessionEntry(sessionId);
     if (action === 'show') {
-      const shown = await invokeWork(sessionId, 'show');
+    const shown = await invokeWork(sessionId, 'show', { view: options.summary ? 'summary' : 'full' });
       emit('table-work.show', shown.data, (value) => console.log(`${value.session_id}: ${value.sources.length} Source(s), Recipe v${value.recipe.version}.`)); return;
     }
     if (action === 'reuse') {
@@ -3582,6 +3582,7 @@ async function main() {
           throw new Error('ui accepts an optional --path, --port, --no-open, or --browser.');
         }
         const diagnostics = tracker.ledger.diagnostics();
+        const { startAtlasUiServer } = await import('../src/ui-server.js');
         const session = await startAtlasUiServer({
           stateDir,
           currentPath: options.currentPath,

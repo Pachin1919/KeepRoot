@@ -1,5 +1,6 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
+import { configureCaptureNetwork, captureNetworkFailure } from './capture-network.js';
 
 const MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
@@ -233,22 +234,27 @@ export async function fetchPublicDocument(urlInput, {
   lookupHost = dns.lookup,
   timeoutMs = 15_000,
   includeResponseBytes = false,
+  configureNetwork = configureCaptureNetwork,
 } = {}) {
   if (typeof fetchImpl !== 'function') throw new Error('This Node runtime does not provide fetch.');
-  let target = await publicUrl(urlInput, lookupHost);
+  let target = await publicUrl(urlInput, lookupHost).catch(error => {
+    if (['ENOTFOUND','EAI_AGAIN'].includes(error.code)) throw captureNetworkFailure(error);
+    throw error;
+  });
+  const network = fetchImpl === globalThis.fetch ? await configureNetwork() : {mode:'injected_fetch'};
   let current = target.url;
   const requestedUrl = current.toString();
   const resolverModes = new Set([target.resolver_mode]);
   let redirects = 0;
   let response;
   while (true) {
-    response = await fetchImpl(current, {
+    try { response = await fetchImpl(current, {
       method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
       headers: {
         accept: 'text/html,application/xhtml+xml,text/plain;q=0.9',
         'user-agent': 'Atlas-Local-Capture/1.4',
       },
-    });
+    }); } catch (error) { throw captureNetworkFailure(error); }
     if (![301, 302, 303, 307, 308].includes(response.status)) break;
     if (redirects >= MAX_REDIRECTS) throw new Error(`capture fetch exceeds ${MAX_REDIRECTS} redirects.`);
     const location = response.headers.get('location');
@@ -318,6 +324,7 @@ export async function fetchPublicDocument(urlInput, {
     ...(includeResponseBytes ? { response_bytes: bytes } : {}),
     resolver_mode: resolverModes.has('https_proxy_fake_ip') ? 'https_proxy_fake_ip' : 'public_dns',
     network_used: true,
+    network_mode: network.mode,
     browser_used: false,
     external_application_used: false,
   };

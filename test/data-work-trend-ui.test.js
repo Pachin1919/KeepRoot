@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderDataWorkView } from '../src/ui/views/data-work-view.js';
 
-test('Table Work UI exposes date-only trend Recipe fields and draws labeled monthly results', () => {
+test('Table Work UI exposes date-only trend Recipe fields and shows authoritative monthly results', () => {
   const session = {
     session_id: 'DWT-0123456789abcdef0123456789abcdef', project_id: 'PRJ-trend', project_name: 'Traffic',
     revision: 7, preview_revision: 7, intent: 'Monthly trend', mapping_complete: true, caller: { tool: 'fixture' },
@@ -16,7 +16,7 @@ test('Table Work UI exposes date-only trend Recipe fields and draws labeled mont
   for (const name of ['trend_date_field', 'trend_measure', 'trend_start_month', 'trend_current_start_month', 'trend_end_month', 'trend_unit', 'trend_null_policy']) assert.match(html, new RegExp(`name="${name}"`, 'u'));
   assert.match(html, /Monthly trend/u); assert.match(html, /2026-01/u); assert.match(html, /2026-04/u);
   assert.match(html, /Previous period 500/u); assert.match(html, /current period 550/u); assert.match(html, /10%/u);
-  assert.match(html, /<svg/u); assert.match(html, /aria-label=/u);
+  assert.doesNotMatch(html, /data-work-trend-chart/u); assert.match(html, /data-result-table/u);
   assert.match(html, /same Work revision/u);
 
   const signed = structuredClone(session);
@@ -24,10 +24,10 @@ test('Table Work UI exposes date-only trend Recipe fields and draws labeled mont
     { month: '2026-01', sum: -100 }, { month: '2026-02', sum: 0 },
     { month: '2026-03', sum: 50 }, { month: '2026-04', sum: -25 },
   ];
+  signed.preview.rows = [['2026-01', -100], ['2026-02', 0], ['2026-03', 50], ['2026-04', -25]];
   const signedHtml = renderDataWorkView({ mode: 'sources', session: signed, project: { id: signed.project_id, name: 'Traffic' }, back_href: '/projects/PRJ-trend/resources', csrf: 'csrf-trend' }, { locale: 'en' });
-  const chart = signedHtml.match(/<svg class="data-work-trend-chart"[\s\S]*?<\/svg>/u)?.[0];
-  assert.ok(chart);
-  const points = [...chart.matchAll(/<circle[^>]+cy="([^"]+)"/gu)].map((match) => Number(match[1]));
-  assert.equal(points.length, 4);
-  assert.ok(points.every((y) => Number.isFinite(y) && y >= 20 && y <= 170), `Chart points outside the canvas: ${points.join(', ')}`);
+  assert.doesNotMatch(signedHtml, /data-work-trend-chart/u);
+  for (const [month, sum] of [['2026-01', -100], ['2026-02', 0], ['2026-03', 50], ['2026-04', -25]]) {
+    assert.ok(signedHtml.includes(`<tr><td>${month}</td><td>${sum}</td></tr>`));
+  }
 });

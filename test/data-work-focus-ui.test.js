@@ -29,7 +29,7 @@ test('Table Work aggregate categories expose revision-bound focus and processed-
   const focusedSession = {
     ...session, revision: 9, preview_revision: 9,
     recipe: { ...session.recipe, steps: [session.recipe.steps[0], { operation: 'filter', column: 'district', operator: 'equals', value: 'North', focus: true }, session.recipe.steps[1]] },
-    preview: { ...session.preview, aggregation: { ...session.preview.aggregation, included_rows: 25, excluded_rows: 0, grand_total: 312.5, groups: [{ value: 'North', sum: 312.5, rows: 25 }] } },
+    preview: { ...session.preview, rows: [['North',312.5], ['Returns',-20]], aggregation: { ...session.preview.aggregation, included_rows: 25, excluded_rows: 0, grand_total: 312.5, groups: [{ value: 'North', sum: 312.5, rows: 25 }] } },
   };
   const focusedHtml = renderDataWorkView({ mode: 'sources', session: focusedSession, project: { id: session.project_id, name: 'Traffic' }, back_href: '/projects/PRJ-focus/resources', csrf: 'csrf-focus' }, { locale: 'en' });
   assert.match(focusedHtml, /312\.5/u);
@@ -40,18 +40,19 @@ test('Table Work aggregate categories expose revision-bound focus and processed-
   const emptySession = {
     ...focusedSession,
     recipe: { ...focusedSession.recipe, steps: [session.recipe.steps[0], { operation: 'filter', column: 'district', operator: 'is_empty', value: '', focus: true }, session.recipe.steps[1]] },
-    preview: { ...focusedSession.preview, aggregation: { ...focusedSession.preview.aggregation, grand_total: 0, groups: [{ value: '', sum: 0, rows: 1 }] } },
+    preview: { ...focusedSession.preview, columns: ['district', 'amount'], rows: [['', 0]], aggregation: { ...focusedSession.preview.aggregation, grand_total: 0, groups: [{ value: '', sum: 0, rows: 1 }] } },
   };
   const emptyHtml = renderDataWorkView({ mode: 'sources', session: emptySession, project: { id: session.project_id, name: 'Traffic' }, back_href: '/projects/PRJ-focus/resources', csrf: 'csrf-focus' }, { locale: 'en' });
   assert.match(emptyHtml, /\(Empty category\)/u);
   assert.match(emptyHtml, /name="category" value=""/u);
   const negativeSession = {
     ...session,
-    preview: { ...session.preview, aggregation: { ...session.preview.aggregation, grand_total: 292.5, groups: [
+    preview: { ...session.preview, rows: [['North', 312.5], ['Returns', -20]], aggregation: { ...session.preview.aggregation, grand_total: 292.5, groups: [
       { value: 'North', sum: 312.5, rows: 25 }, { value: 'Returns', sum: -20, rows: 2 },
     ] } },
   };
   const negativeHtml = renderDataWorkView({ mode: 'sources', session: negativeSession, project: { id: session.project_id, name: 'Traffic' }, back_href: '/projects/PRJ-focus/resources', csrf: 'csrf-focus' }, { locale: 'en' });
-  assert.match(negativeHtml, /data-sign="negative"/u);
-  assert.match(negativeHtml, /-20 vehicles/u);
+  assert.doesNotMatch(negativeHtml, /data-work-focus-bars/u);
+  assert.match(negativeHtml, /<td>-20<\/td>/u);
+  assert.match(emptyHtml, /<td>0<\/td>/u);
 });

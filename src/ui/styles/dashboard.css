@@ -1,0 +1,32 @@
+/* Layout mechanisms informed by Superset grid/header, Evidence surface depth
+   and density, and Rill compact controls. Original CSS; no upstream source,
+   fonts, theme engine or framework copied. Existing Atlas theme tokens apply. */
+body .topbar { box-shadow:0 1px 0 color-mix(in srgb,var(--line) 55%,transparent); }
+body :is(.operator-page, .toolbox-page, .product-project-home) { --dashboard-edge: color-mix(in srgb, var(--line) 82%, var(--muted)); --dashboard-shadow: 0 1px 2px rgb(31 45 55 / 4%), 0 4px 12px rgb(31 45 55 / 5%); }
+body .operator-page > .surface,
+body .toolbox-page > .surface,
+body.product-workspace-body .product-project-home .project-home-section,
+body .product-project-home :is(.project-home-continue, .project-home-result-card, .project-home-card) { border: 1px solid var(--dashboard-edge, var(--line)); border-radius: 6px; background: var(--surface-raised); box-shadow: var(--dashboard-shadow); }
+body .operator-page > .surface { padding: 14px 16px; margin-bottom: 0; }
+body .operator-page .page-intro { padding: 2px 0 8px; }
+body .product-project-home .project-home-section-heading { margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+body .product-project-home .project-home-section { margin-bottom: 14px; }
+body .toolbox-page .toolbox-catalog { gap: 20px; }
+body .toolbox-page .toolbox-group-heading { padding: 8px 0; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+body .toolbox-page .toolbox-tool-card { padding: 16px; border-radius: 6px; background: var(--surface-raised); box-shadow: var(--dashboard-shadow); }
+body .toolbox-page .toolbox-tool-icon { width: 34px; height: 34px; border-radius: 5px; }
+body .toolbox-page .toolbox-tool-copy strong { font-size: var(--font-size-base); }
+body .toolbox-page .toolbox-tool-enter { right: 14px; bottom: 12px; }
+body .activity-manager-toolbar { padding: 8px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-raised); box-shadow: 0 1px 3px rgb(31 45 55 / 4%); }
+body .activity-manager-row { border-radius: 5px; background: var(--surface-raised); }
+body .activity-manager-row > summary { padding-block: 9px; }
+body .activity-manager-row.is-failed { border-color: var(--danger); }
+body .activity-manager-row.is-waiting { border-color: var(--warning); }
+body :is(.operator-page, .toolbox-page, .product-project-home) .action-button { border-radius: 5px; min-height: 32px; padding: 6px 10px; font-family: var(--font-sans); font-size: var(--font-size-work); }
+body :is(.operator-page, .toolbox-page, .product-project-home) :is(.action-button-secondary, .action-button[aria-disabled="true"]) { background: var(--surface-raised); color: var(--ink); border-color: var(--line); }
+body :is(.operator-page, .toolbox-page, .product-project-home) :is(.action-button-danger, .action-button-remove) { color: var(--danger-action); background: var(--danger-soft); border-color: var(--danger-action); }
+body :is(.operator-page, .toolbox-page, .product-project-home) :is(button:disabled, .is-disabled, [aria-disabled="true"]) { opacity: .6; box-shadow: none; cursor: not-allowed; border-style: dashed; }
+body :is(.operator-page, .toolbox-page, .product-project-home) :is(input:read-only, textarea:read-only) { background: var(--surface-muted); border-style: dashed; }
+body :is(.operator-page, .toolbox-page, .product-project-home) .callout.warn { border-left: 3px solid var(--warning); background: var(--warning-soft); color: var(--ink); }
+body :is(.operator-page, .toolbox-page, .product-project-home) [role="alert"] { border-color: var(--danger); }
+@media (max-width: 680px) { body .operator-page > .surface { padding: 12px; } body .toolbox-page .toolbox-tool-card { padding: 12px; } }

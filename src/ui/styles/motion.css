@@ -1,0 +1,25 @@
+/* Progressive same-origin navigation; link and form behavior stays native. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+  html:not([data-reduce-motion="true"]) .sidebar { view-transition-name: atlas-nav; }
+  html:not([data-reduce-motion="true"]) .topbar { view-transition-name: atlas-topbar; }
+  html:not([data-reduce-motion="true"]) :is(.page, .resource-reader) { view-transition-name: atlas-page; }
+  ::view-transition-old(root), ::view-transition-new(root),
+  ::view-transition-old(atlas-nav), ::view-transition-new(atlas-nav),
+  ::view-transition-old(atlas-topbar), ::view-transition-new(atlas-topbar) { animation: none; mix-blend-mode: normal; }
+  ::view-transition-old(root), ::view-transition-old(atlas-nav), ::view-transition-old(atlas-topbar) { display: none; }
+  ::view-transition-group(*) { animation-duration: 0s; }
+  ::view-transition-old(atlas-page) { animation: atlas-page-out 120ms ease-out both; }
+  ::view-transition-new(atlas-page) { animation: atlas-page-in 160ms ease-out both; }
+  html:not([data-reduce-motion="true"]) :is(.reader-button, .action-button, .toolbox-tool-card) { transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease, transform 120ms ease; }
+  html:not([data-reduce-motion="true"]) :is(.reader-button, .action-button):active:not(:disabled):not([aria-disabled="true"]) { transform: translateY(1px); }
+}
+@keyframes atlas-page-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes atlas-page-out { from { opacity: 1; } to { opacity: 0; } }
+html[data-reduce-motion="true"] :is(.reader-button, .action-button, .toolbox-tool-card) { transition: none; transform: none; }
+html[data-reduce-motion="true"]::view-transition-old(*), html[data-reduce-motion="true"]::view-transition-new(*) { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+  body :is(.reader-button, .action-button, .toolbox-tool-card) { transition: none; transform: none; }
+  ::view-transition-old(*), ::view-transition-new(*) { animation: none; }
+}

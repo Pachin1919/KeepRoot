@@ -1,5 +1,15 @@
 import { escapeHtml } from './components.js';
 export function toolboxErrorKey(error) {
+ if(error?.code==='ATLAS_CAPTURE_NETWORK') {
+  const reason=error.details?.reason;
+  if(reason==='connection_timeout')return 'network_timeout';
+  if(reason==='dns_failure')return 'dns_failure';
+  if(reason==='tls_failure')return 'tls_failure';
+  if(reason==='proxy_pac_unsupported')return 'proxy_pac';
+  if(reason==='proxy_requires_node_24_14')return 'proxy_node';
+  if(String(reason).startsWith('proxy_'))return 'proxy_error';
+  return 'network_error';
+ }
  const text=String(error?.message ?? error ?? '');
  if (/module|paused|disabled/iu.test(text)) return 'capture_paused';
  if (/at least one|no.*selected/iu.test(text)) return 'missing';

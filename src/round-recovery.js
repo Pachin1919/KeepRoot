@@ -228,7 +228,7 @@ export class RoundRecovery {
   list({ projectId }) {
     this.#project(projectId);
     return this.db.prepare('SELECT state_json FROM recovery_rounds WHERE project_id=? ORDER BY updated_at DESC').all(projectId)
-      .map(({ state_json }) => { const r = JSON.parse(state_json); return { round_id: r.round_id, label: r.label, revision: r.revision, pending_restore: r.pending_restore, updated_at: r.updated_at }; });
+      .map(({ state_json }) => { const r = JSON.parse(state_json); return { round_id: r.round_id, label: r.label, revision: r.revision, pending_restore: r.pending_restore, updated_at: r.updated_at, created_at: r.nodes?.[0]?.created_at, node_count: (r.nodes ?? []).length, file_count: (r.paths ?? []).length }; });
   }
 
   protectedRoundsForSave({ projectId, saveId, targetPath }) {

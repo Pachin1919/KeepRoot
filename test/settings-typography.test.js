@@ -5,6 +5,58 @@ import test from 'node:test';
 import { Registry } from '../src/registry.js';
 import { startAtlasUiServer } from '../src/ui-server.js';
 import { normalizeUiPreferences, readUiPreferences, uiPreferencesPath, writeUiPreferences } from '../src/ui/preferences.js';
+import { renderSettingsView } from '../src/ui/views/settings-view.js';
+import { uiStyles } from '../src/ui/styles.js';
+
+test('Settings names the neutral palettes while retaining persisted IDs and independent accent choices', () => {
+  for (const [locale, names] of [['en', ['Bright white', 'Cool blue-grey', 'Navy navigation', 'Green', 'Blue', 'Purple']], ['zh-CN', ['明亮白', '冷蓝灰', '深蓝导航', '绿色', '蓝色', '紫色']]]) {
+    const html = renderSettingsView({ preferences: normalizeUiPreferences({ locale, theme: 'graphite', accent: 'vermilion' }) });
+    const body = html.slice(html.indexOf('<body'));
+    for (const name of names) assert.ok(body.includes(`<strong>${name}</strong>`));
+    assert.match(body, /name="theme" value="graphite" checked/u);
+    assert.match(body, /name="accent" value="vermilion" checked/u);
+    for (const id of ['slate', 'graphite', 'warm_charcoal']) assert.ok(body.includes(`name="theme" value="${id}"`));
+    for (const id of ['green', 'vermilion', 'amber']) assert.ok(body.includes(`name="accent" value="${id}"`));
+    assert.doesNotMatch(body, /Post-Internet Plum|梅紫界面|鼠尾草导航|墨绿导航/u);
+  }
+});
+
+test('local CJK typography separates UI, explicit reading choices and code in both Settings previews', () => {
+  const css = uiStyles();
+  assert.match(css, /--font-sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif/u);
+  assert.match(css, /--reading-font: var\(--font-sans\)/u);
+  assert.match(css, /html\[data-reading-font="serif"\] \{ --reading-font: Georgia/u);
+  assert.match(css, /html\[data-reading-font="mono"\] \{ --reading-font: var\(--font-mono\)/u);
+  assert.doesNotMatch(css, /\.reader-paper\s*\{[^}]*font-family:\s*var\(--font-sans\)/u, 'reading surfaces must honor the explicit reading preference');
+  assert.match(css, /button, input, select, textarea, summary \{ font-family: inherit; \}/u);
+  assert.match(css, /code, kbd, samp, pre \{ font-family: var\(--font-mono\); \}/u);
+  assert.doesNotMatch(css, /font-weight:\s*(?:7[2-9]\d|[89]\d\d)/u);
+  for (const locale of ['en', 'zh-CN']) {
+    const preferences = normalizeUiPreferences({ locale, reading_font: 'serif' });
+    const html = renderSettingsView({ preferences }, { csrfToken: 'font-csrf', returnHref: '/projects' });
+    const body = html.slice(html.indexOf('<body'));
+    assert.match(html, /data-reading-font="serif"/u);
+    assert.match(body, /name="reading_font"><option value="inherit">[^<]+<\/option><option value="serif" selected>/u);
+    assert.match(body, /class="settings-interface-sample"/u);
+    assert.match(body, /class="settings-reading-sample"/u);
+    assert.match(body, /class="settings-code-sample"/u);
+    assert.match(body, /<code>const total = 120 \+ 80;<\/code>/u);
+    assert.doesNotMatch(body, /settings\.(?:interface_font_help|reading_font_help|code_font_help|interface_sample_title)/u);
+    assert.match(body, /name="csrf" value="font-csrf"/u);
+    assert.match(body, /name="action" value="save"/u);
+  }
+});
+
+test('paper and button hierarchy retain keyboard focus and reduced motion without blurring reading text', () => {
+  const css = uiStyles();
+  assert.match(css, /background-image: linear-gradient\([^\n]+atlas-paper-texture\.png/u);
+  assert.match(css, /body\.atlas-reader-body \.reader-paper[^}]+background-color: var\(--surface-raised\)/u);
+  assert.match(css, /body \.action-button:focus-visible[^}]+outline: 2px solid var\(--accent-strong\)/u);
+  assert.match(css, /@supports \(backdrop-filter: blur\(4px\)\) \{ body \.action-button/u);
+  assert.match(css, /html\[data-reduce-motion="true"\] :is\([^)]*\.action-button[^)]*\) \{ transition: none; transform: none; \}/u);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*@view-transition \{ navigation: none; \}\s*body :is\([^)]*\.action-button[^)]*\) \{ transition: none; transform: none; \}/u);
+  assert.doesNotMatch(css, /reader-paper[^{}]*\{[^}]*backdrop-filter/u);
+});
 
 test('existing display preferences gain typography defaults and reject arbitrary font/CSS input', () => {
   fs.mkdirSync('test/.tmp', { recursive: true });

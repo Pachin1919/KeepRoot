@@ -1045,6 +1045,17 @@ test('Resources keeps Project Home and concise resource context ahead of folded 
   assert.match(html, /href="\/projects\/P-1">Project Home<\/a>/u); assert.match(html, /<details class="resource-view-settings"><summary>View settings/u); assert.match(html, /No files selected for Work/u); assert.match(html, /<h2>input\.csv<\/h2>[\s\S]*?Current/u); assert.match(html, /Work with data/u); assert.match(html, /Related Work/u); assert.match(html, /Referenced by Boards/u); assert.match(html, /<details class="workspace-focus-details"><summary>Project and file details/u);
 });
 
+test('Resources lists a Board once when both material and result blocks reference the file', () => {
+  const reference={board_id:'BRD-one',revision:2,title:'Combined delivery',href:'/projects/P-1/boards/BRD-one'};
+  const resource={resource_id:'RES-1',name:'input.csv',type:'CSV',relative_path:'input.csv',state:'unchanged',board_references:[{...reference,block_id:'material'},{...reference,block_id:'result'},{...reference,board_id:'BRD-two',href:'/projects/P-1/boards/BRD-two'}]};
+  const before=JSON.stringify(resource.board_references);
+  const html=renderProjectResourcesView({mode:'list',project:{id:'P-1',name:'Project'},base:'/projects/P-1',tree:{folders:[],files:[]},work_selection:{count:0,review_href:'#'},boards:[],focused_resource:resource,resource_view:{mode:'files',saved_views:[],active_view:null,temporary_config:{scope:{path:'',extensions:[]},filters:[],sort:[]},members:[],property_definitions:[]}});
+  const section=html.match(/<h3>Referenced by Boards<\/h3>([\s\S]*?)<\/section>/u)[1];
+  assert.equal(section.split('href="/projects/P-1/boards/BRD-one"').length-1,1);
+  assert.ok(section.includes('href="/projects/P-1/boards/BRD-two"'));
+  assert.equal(JSON.stringify(resource.board_references),before,'block-level evidence is retained');
+});
+
 test('Files view gives a current scope summary and a directory-selection guide', async (t) => {
   const f = fixture(t); const control = createResourceControl({ stateDir: f.stateDir, ledger: f.registry.ledger }); const server = await startAtlasUiServer({ stateDir: f.stateDir, registry: f.registry, rules: {}, runtime: {}, projectRoot: f.root, installationRoot: f.root, resourceControl: control });
   t.after(async () => { await server.close(); control.dispose(); }); const html = await (await fetch(`${server.workspace_url}projects/${f.a.project_id}/resources?mode=files&scope_path=Data`)).text();

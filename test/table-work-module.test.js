@@ -221,6 +221,29 @@ test('Table Work Module shares a bounded Project-scoped CSV Work through Save', 
   });
   assert.equal(shown.data.latest_result.work_id, saved.data.work_id);
   assert.equal(shown.state.saves.latest_save_id, saved.data.work_id);
+  const summary = await module.invoke({
+    protocol: MODULE_PROTOCOL_VERSION, module_id: 'atlas.table-work', project_id: a.project_id,
+    work: { session_id: work.session_id, base_revision: shown.data.revision },
+    action: 'show', parameters: { view: 'summary' },
+  });
+  assert.equal(summary.data.view, 'summary');
+  assert.equal(summary.data.session_id, shown.data.session_id);
+  assert.equal(summary.data.revision, shown.data.revision);
+  assert.equal(summary.data.latest_result.work_id, saved.data.work_id);
+  assert.equal(summary.data.latest_result.freshness.output_status, 'changed');
+  assert.deepEqual(summary.data.change_review, shown.data.change_review);
+  assert.deepEqual(summary.data.actions, summary.state.actions);
+  assert.equal(summary.data.latest_result.prepare_request, undefined);
+  assert.equal(summary.data.sources[0].profile, undefined);
+  assert.equal(summary.data.preview.rows, undefined);
+  assert.match(summary.data.details.work, /table-work show .* --json$/u);
+  assert.match(summary.data.details.save, /save show SAV-.* --json$/u);
+  assert.ok(Buffer.byteLength(JSON.stringify(summary.data)) < Buffer.byteLength(JSON.stringify(shown.data)) / 2);
+  await assert.rejects(module.invoke({
+    protocol: MODULE_PROTOCOL_VERSION, module_id: 'atlas.table-work', project_id: a.project_id,
+    work: { session_id: work.session_id, base_revision: shown.data.revision },
+    action: 'show', parameters: { view: 'unchecked' },
+  }), { code: 'ATLAS_MODULE_INVALID_REQUEST' });
 
   const pinnedSession = {
     session_id: 'DWT-pinned-not-ready', project_id: a.project_id, revision: 4, status: 'open', intent: 'Pinned blocker',
@@ -237,6 +260,14 @@ test('Table Work Module shares a bounded Project-scoped CSV Work through Save', 
   });
   assert.equal(pinnedState.state.sources[0].version_policy, 'pinned_version');
   assert.equal(pinnedState.state.actions.find((item) => item.action === 'preview').executable, false);
+  const pinnedSummary = await projected.invoke({
+    protocol: MODULE_PROTOCOL_VERSION, module_id: 'atlas.table-work', project_id: a.project_id,
+    work: { session_id: pinnedSession.session_id, base_revision: pinnedSession.revision },
+    action: 'show', parameters: { view: 'summary' },
+  });
+  assert.equal(pinnedSummary.data.sources[0].status, 'changed');
+  assert.equal(pinnedSummary.data.sources[0].version_policy, 'pinned_version');
+  assert.equal(pinnedSummary.data.actions.find(item => item.action === 'preview').executable, false);
 
   const oversizedPreviewSession = {
     ...pinnedSession,

@@ -2670,7 +2670,7 @@ test('Settings exposes distinct workspace themes and migrates the legacy blue ac
   assert.match(preferenceHtmlAttributes(migrated), /data-reduce-motion="false"/u);
 
   const html = renderSettingsView({ preferences: migrated, runtime: {} }, { csrfToken: 'csrf', returnHref: '/activity' });
-  for (const theme of ['Workspace', 'Post-Internet Plum', 'Gallery Grid']) assert.match(html, new RegExp(theme, 'u'));
+  for (const theme of ['Bright white', 'Cool blue-grey', 'Navy navigation']) assert.match(html, new RegExp(theme, 'u'));
   assert.match(html, /<dialog[^>]+data-overlay-autostart[^>]+data-overlay-dirty-protect/u);
   assert.match(html, /data-overlay-return-href="\/activity"/u);
   assert.match(html, /data-overlay-initial-focus/u);

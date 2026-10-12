@@ -17,6 +17,7 @@ export const TABLE_WORK_MODULE_DESCRIPTOR = Object.freeze({
   ]),
   unsupported_actions: Object.freeze(['cancel', 'run', 'third-party-load']),
   preview_limits: Object.freeze({ max_rows: 50, max_columns: 100, max_utf8_bytes: 65536 }),
+  show_views: Object.freeze(['full', 'summary']),
 });
 
 const ACTIONS = new Set(TABLE_WORK_MODULE_DESCRIPTOR.actions);
@@ -26,6 +27,32 @@ function moduleError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+// A readback projection, not a replacement for the immutable Save receipt.
+// Keep current checks and warnings; omit profiles, row bodies and replay payloads.
+function workSummary(data, state) {
+  const latest = data.latest_result;
+  return {
+    view: 'summary', session_id: data.session_id, project_id: data.project_id,
+    revision: data.revision, status: data.status, intent: data.intent,
+    mapping_complete: data.mapping_complete, recipe_version: data.recipe?.version ?? null,
+    sources: state.sources,
+    preview: state.preview,
+    freshness: data.freshness, change_review: data.change_review,
+    latest_save_id: data.latest_save_id ?? null,
+    latest_result: latest ? {
+      work_id: latest.work_id, resource_id: latest.resource_id ?? null,
+      status: latest.status, result_path: latest.result_path,
+      sha256: latest.result_fingerprint?.sha256 ?? null,
+      result_summary: latest.result_summary, freshness: latest.freshness,
+      undo_available: latest.write?.undo_available === true,
+      redo_available: latest.write?.redo_available === true,
+    } : null,
+    actions: state.actions,
+    details: { work: `atlas table-work show ${data.session_id} --json`,
+      save: latest?.save_id ? `atlas save show ${latest.save_id} --json` : null },
+  };
 }
 
 function requireRecord(value, label) {
@@ -438,6 +465,9 @@ export function createTableWorkModule({ dataWork, savedWork, resolveProject, ava
     availability?.assertActionEnabled?.(DESCRIPTOR.module_id, action);
     const project = verifiedProject(request.project_id);
     const parameters = requireRecord(request.parameters ?? {}, 'Module action parameters');
+    if (action === 'show' && parameters.view != null && !DESCRIPTOR.show_views.includes(parameters.view)) {
+      throw moduleError('ATLAS_MODULE_INVALID_REQUEST', 'Work show view must be full or summary.');
+    }
     if (action === 'list') {
       const data = dataWork.discoverProjectSessions(project.project, { limit: parameters.limit, offset: parameters.offset });
       return response(project, null, data, action);
@@ -513,7 +543,9 @@ export function createTableWorkModule({ dataWork, savedWork, resolveProject, ava
     }
     const resultingSessionId = data?.session_id ?? session.session_id;
     const resultingSession = dataWork.session(resultingSessionId);
-    return response(project, resultingSession, data, action);
+    const result = response(project, resultingSession, data, action);
+    if (action === 'show' && parameters.view === 'summary') result.data = workSummary(data, result.state);
+    return result;
   };
 
   return {

@@ -821,6 +821,7 @@ export class ProjectViewService {
             content_hash: row.catalog_content_hash,
             registered_content_hash: row.content_hash,
             status: row.catalog_status,
+            snippet: String(row.catalog_snippet ?? ''),
             parser: {
               name: row.catalog_parser_name,
               version: row.catalog_parser_version,

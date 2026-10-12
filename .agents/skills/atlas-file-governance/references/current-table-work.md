@@ -13,6 +13,8 @@ Use the installed launcher and `--json` on every call. Include the same caller m
 
 ## Check and reconcile Sources
 
+For routine Host readback, use `table-work show <session_id> --summary --json`. This checks the same Sources and saved output as full `show`, retaining IDs, revision, freshness, change review and action blockers. It omits field profiles, Preview rows and Save replay payloads. Use the returned `details.work` command when field alignment or Recipe details are needed, and `details.save` for the full Save receipt. Summary is an output projection, not a weaker validation mode.
+
 `table-work show` and `prepare` check Sources for changed, moved, or missing state. They do not adopt a changed Source automatically. `show` returns one bounded `change_review` containing the affected Work/latest Result and representative values when the recorded profile supports them. A recorded Hash proves identity; it is not a backup.
 
 After `show` returns the current revision, reconcile one explicit Source with `table-work reconcile <session_id> --source-key <source_key> ...`, or apply the same decision to selected Sources with `table-work reconcile-batch <session_id> --request-file <source-keys.json> --decision <use-current|pin-recorded|follow-latest|stop-using> --base-revision <current_revision> --tool <tool> --client-run-id <id> --json`. The request is `{"source_keys":["SRC-...","SRC-..."]}` and the batch changes the Work revision once.

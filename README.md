@@ -6,14 +6,19 @@ Keeproot keeps files in their existing project folders. People and AI hosts use 
 
 Current version: **2.0.0-preview.1**. This is preview source, not a stable release. Atlas remains the technical name used by the CLI, protocol, Skill and installation directories.
 
+The October 12 UI checkpoint adds fixed reader monitors, brighter controls, optional short transitions and read-only Git history. Its source baseline ran once: 1,031 tests passed, 44 failed, and one was skipped. Three stale UI assertions were corrected and passed a focused check; the earlier 41 failures remain. UI integration, navigation return context and Skill checks still need reconciliation. This checkpoint is not an installation release.
+
 ## What you can try
 
 - Browse and read Markdown, text, images, PDF, DOCX and CSV/XLSX in the workspace.
 - Open Toolbox in the left navigation, select CSV/XLSX materials, and enter a Python table recipe: align, combine, filter, convert types, deduplicate and sort; preview and save the full result.
 - In Toolbox → Content conversion, turn a supported static public URL into a real `.md` file: choose an existing folder, preview, explicitly Save, then read. Source JSON and conversation export capture remain separate options.
 - Edit Markdown or text alongside reading: preview changes, explicitly save to the same Resource, or Undo the edit. Editing does not launch an AI session.
+- Use the fixed document-and-monitors layout, or switch to four panels while retaining the same editor and relationship canvas. Optional motion follows both system and app reduced-motion preferences.
+- In Stages and recovery, inspect a local project's supported Git history, changed files and side-by-side diff. This view is read-only and does not provide Git rollback.
 - Calculate grouped sums, two-axis pivot totals/shares/ranks, and monthly totals with period growth. [Processing implementation and limits](<docs/Atlas 技术作品与企业评审说明.md#python-processing>).
 - Reuse a work configuration with explicitly selected new sources; review source changes.
+- Read confirmed rules as condition → destination diagrams; expand the full explanation and evidence when needed. Pending summaries open their complete proposal before showing rule conditions.
 - Follow recorded source/result relationships, compose a Board and export supported content.
 - Capture supported public pages or selected conversation exports; review local updates.
 - Prepare bounded handoff context and restore supported, explicitly protected work scopes.
@@ -52,15 +57,19 @@ $env:ATLAS_TEST_PYTHON = $env:ATLAS_CONTENT_PYTHON
 npm test
 ```
 
-The retained Git history starts on **2026-07-20**. Internal development documents and machine-specific records were removed from every published revision. Original commit dates, branch relationships and version tags are retained; hashes changed during this cleanup. Older branches represent earlier implementations, not the current supported preview.
+The retained Git history starts on **2026-07-20**. Internal development documents and machine-specific records were removed from every published revision. Original commit dates and branch relationships are retained; hashes changed during this cleanup. Obsolete preview tags were removed. Older branches represent earlier implementations, not the current supported preview.
 
 This repository is public source. A project-wide open-source license has not been selected; bundled third-party code retains its own licenses. Public source visibility does not grant a new license for original code or artwork. Keeproot name rights have not been cleared.
 
 ### Publishing changes
 
-Known test limitation: the legacy navigation-layout regression still needs its resizer check scoped to the current DOM. The regression gate is not fully green. This does not change the preview's pending native, second-host and real-project validation.
+Known test limitations: the October 12 baseline has 41 failed checks across UI structure, return context and Skill contracts. Earlier isolated workflow evidence does not replace this regression gate. Native, second-host and real-project validation remain pending.
 
 Use a sanitized checkout for public updates. Do not merge private development history into this repository. Before committing, run `python scripts/check-public-source.py --worktree`; before pushing, run it without that flag. Enable the included local check with `git config --local core.hooksPath .githooks`. The hook uses Python from PATH or `ATLAS_PUBLIC_CHECK_PYTHON`. CI also checks all reachable history. The checks help detect excluded paths and common sensitive patterns; review public content before upload.
+
+## UI implementation references
+
+The visual refinement branch borrows layout mechanisms from [Superset's fixed dashboard grid](https://github.com/apache/superset/blob/42bbfa49079eff910ead01b7880b94d09c5ca520/superset-frontend/src/dashboard/components/DashboardBuilder/DashboardBuilder.tsx), [Evidence's surface and density tokens](https://github.com/evidence-dev/evidence/blob/14e6caed59ffbb01ea4aa1a0f66a7e29d0e964d1/core/src/theme/theme-css-helper.ts), and [Rill's compact controls](https://github.com/rilldata/rill/blob/aa3660068b8a10e59495e35790b6de0bdcdba4e7/web-common/src/components/button/Button.svelte). These are design references; their frameworks, dependencies and code were not copied into this refinement.
 
 ## Feedback
 

@@ -110,7 +110,7 @@ export function renderTopbar({ section, project = null, resource = null, status 
     ? `<span class="topbar-context">${projectLabel}${resource ? `<small>${escapeHtml(resource)}</small>` : ''}</span>`
     : `<span class="topbar-context"><strong>${escapeHtml(section ?? UI_DISPLAY_NAME)}</strong></span>`;
   return `<header class="topbar" data-current-project-id="${escapeHtml(project?.id ?? '')}" data-current-resource-path="${escapeHtml(resource ?? '')}">
-    <div class="topbar-identity"><span class="label">${UI_DISPLAY_NAME} Desktop</span>${context}</div>
+    <div class="topbar-identity">${context}</div>
     <button class="topbar-search" type="button" data-overlay-open="atlas-search" aria-haspopup="dialog" aria-label="${escapeHtml(t('topbar.search'))}"><span class="nav-icon" aria-hidden="true">&#xE721;</span><span>${escapeHtml(t('topbar.search'))}</span><kbd>Ctrl K</kbd></button>
     <span class="status status-safe topbar-status">${escapeHtml(status ?? t('topbar.on_device'))}</span>
   </header>
