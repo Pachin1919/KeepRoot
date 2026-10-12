@@ -66,7 +66,7 @@ test('rule review keeps basis, required reasons and original approve/reject/corr
   for (const action of ['approve', 'reject', 'correct']) hidden(html, 'action', action);
   assert.equal((html.match(/name="reason" maxlength="500" required/gu) ?? []).length, 3);
   assert.match(html, /href="\/projects\/P1\/rules\/RULE1"/u);
-  assert.match(html, /<details><summary>Rule details<\/summary>/u);
+  assert.match(html, /<details\b[^>]*><summary>Rule details<\/summary>/u);
   assert.match(html, /RV1/u);
 });
 

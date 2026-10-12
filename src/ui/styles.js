@@ -8,6 +8,7 @@ const files = [
   new URL('./styles/workspace.css', import.meta.url),
   new URL('./styles/board.css', import.meta.url),
   new URL('./styles/rules.css', import.meta.url),
+  new URL('./styles/dashboard.css', import.meta.url),
 ];
 
 export function uiStyles() {

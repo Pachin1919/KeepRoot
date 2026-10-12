@@ -16,6 +16,7 @@ The October 12 development checkpoint retains working features and known regress
 - Edit Markdown or text alongside reading: preview changes, explicitly save to the same Resource, or Undo the edit. Editing does not launch an AI session.
 - Calculate grouped sums, two-axis pivot totals/shares/ranks, and monthly totals with period growth. [Processing implementation and limits](<docs/Atlas 技术作品与企业评审说明.md#python-processing>).
 - Reuse a work configuration with explicitly selected new sources; review source changes.
+- Read confirmed rules as condition → destination diagrams; expand the full explanation and evidence when needed. Pending summaries open their complete proposal before showing rule conditions.
 - Follow recorded source/result relationships, compose a Board and export supported content.
 - Capture supported public pages or selected conversation exports; review local updates.
 - Prepare bounded handoff context and restore supported, explicitly protected work scopes.
@@ -63,6 +64,10 @@ This repository is public source. A project-wide open-source license has not bee
 Known test limitations: the October 12 baseline has 41 failed checks across UI structure, return context and Skill contracts. Earlier isolated workflow evidence does not replace this regression gate. Native, second-host and real-project validation remain pending.
 
 Use a sanitized checkout for public updates. Do not merge private development history into this repository. Before committing, run `python scripts/check-public-source.py --worktree`; before pushing, run it without that flag. Enable the included local check with `git config --local core.hooksPath .githooks`. The hook uses Python from PATH or `ATLAS_PUBLIC_CHECK_PYTHON`. CI also checks all reachable history. The checks help detect excluded paths and common sensitive patterns; review public content before upload.
+
+## UI implementation references
+
+The visual refinement branch borrows layout mechanisms from [Superset's fixed dashboard grid](https://github.com/apache/superset/blob/42bbfa49079eff910ead01b7880b94d09c5ca520/superset-frontend/src/dashboard/components/DashboardBuilder/DashboardBuilder.tsx), [Evidence's surface and density tokens](https://github.com/evidence-dev/evidence/blob/14e6caed59ffbb01ea4aa1a0f66a7e29d0e964d1/core/src/theme/theme-css-helper.ts), and [Rill's compact controls](https://github.com/rilldata/rill/blob/aa3660068b8a10e59495e35790b6de0bdcdba4e7/web-common/src/components/button/Button.svelte). These are design references; their frameworks, dependencies and code were not copied into this refinement.
 
 ## Feedback
 

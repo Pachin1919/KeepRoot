@@ -5,7 +5,7 @@ const COPY = {
   background: ['Background palette', '背景配色'],
   theme_slate: ['Workspace', '工作区'], theme_slate_detail: ['Paper white, sage navigation and restrained color marks.', '纸白阅读区、鼠尾草导航与克制的色标。'],
   theme_graphite: ['Post-Internet Plum', '梅紫界面'], theme_graphite_detail: ['Plum, mint, coral and warm white.', '梅紫、薄荷绿、珊瑚色和暖白。'],
-  theme_warm: ['Gallery Grid', '展厅网格'], theme_warm_detail: ['Stone, black-green, ochre and sage.', '石色、墨绿、赭黄和鼠尾草绿。'],
+  theme_warm: ['Graphite workspace', '石墨工作区'], theme_warm_detail: ['White panels, a muted green rail and a pale neutral canvas.', '白色面板、墨绿导航与浅灰底色。'],
   accent: ['Accent', '强调色'], accent_green: ['Sage', '鼠尾草绿'], accent_green_detail: ['Soft green actions and selections.', '柔和的绿色操作与选中状态。'],
   accent_vermilion: ['Ink blue', '墨蓝'], accent_vermilion_detail: ['Cool blue actions and selections.', '清晰的蓝色操作与选中状态。'],
   accent_amber: ['Plum', '梅紫'], accent_amber_detail: ['Muted purple actions and selections.', '柔和的紫色操作与选中状态。'],

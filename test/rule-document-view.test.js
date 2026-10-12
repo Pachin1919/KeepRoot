@@ -32,7 +32,9 @@ test('Rule review retains exact actions and required reasons in the fixed action
   assert.equal((html.match(/action="\/projects\/P\/rules\/C"/gu) ?? []).length, 3);
   assert.equal((html.match(/name="csrf" value="token"/gu) ?? []).length, 3);
   assert.doesNotMatch(html, /重复提案/u); assert.match(html, /另一条提案/u);
-  assert.match(html, /材料来源：聊天导出/u); assert.match(html, /研究 · 待你确认/u);
+  assert.match(html, /材料来源：聊天导出/u);
+  assert.match(html, /class="rule-scope">研究<\/span>/u);
+  assert.match(html, /class="rule-state">待你确认<\/span>/u);
   const closed = render({ preview: { ...preview, status: 'rejected' } });
   assert.doesNotMatch(closed, /<form/u); assert.match(closed, /此提案已结束/u);
 });
@@ -60,7 +62,7 @@ test('Rule deactivation posts current rule identity without proposal and retains
 
 test('placement document uses readable role and one destination instruction while retaining technical facts', () => {
   const html = render({active:[{rule_id:'R-note',kind:'placement',summary:'摘记入库',value:{role:'note',target_subdirectory:'资料'}}]});
-  const article=html.match(/<article class="rule-document">([^]*?)<\/article>/u)[1];
+  const article=html.match(/<article class="rule-document"[^>]*>([^]*?)<\/article>/u)[1];
   assert.match(article,/<dt>材料用途<\/dt><dd>摘记<\/dd>/u);
   assert.match(article,/将匹配的材料放入「资料」/u);
   assert.doesNotMatch(article,/<dt>目标目录<\/dt>|<dd>note<\/dd>/u);
