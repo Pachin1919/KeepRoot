@@ -31,3 +31,10 @@ test('package review retains explicit trust/permissions/version confirmation and
   assert.ok(html.indexOf('data-local-package-preview') < html.indexOf('<details class="surface module-local-install"'));
   assert.match(html, /full account permissions/u);
 });
+
+test('installed local tool explains that transformation preview executes full account code', () => {
+  const html = renderModuleAvailabilityView({ modules: [], local_revision: 1, local_modules: [{ module_id: 'local.demo', module_version: '1', enabled: false, permissions: ['node_full_account'], sha256: 'a'.repeat(64) }] }, { locale: 'zh-CN' });
+  assert.match(html, /data-local-module-run-notice/u);
+  assert.match(html, /预览文本和准备Save都会执行模组代码/u);
+  assert.match(html, /没有沙箱/u);
+});

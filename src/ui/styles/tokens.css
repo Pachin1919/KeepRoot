@@ -42,7 +42,7 @@
   --shadow-soft: 0 12px 34px rgb(62 47 28 / 10%);
   --radius-surface: 12px;
   --radius-control: 8px;
-  --font-sans: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable", "Segoe UI", sans-serif;
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   --ui-scale: 1;
   --viewport-height: calc(100dvh / var(--ui-scale));
   --viewport-width: calc(100vw / var(--ui-scale));
@@ -58,7 +58,7 @@
   --reading-line-height: 1.75;
 }
 
-html[data-font-family="sans"] { --font-sans: "Microsoft YaHei UI", "Microsoft YaHei", Aptos, Calibri, "Noto Sans CJK SC", sans-serif; }
+html[data-font-family="sans"] { --font-sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; }
 html[data-reading-font="serif"] { --reading-font: Georgia, "Noto Serif CJK SC", "Source Han Serif SC", SimSun, serif; }
 html[data-reading-font="mono"] { --reading-font: var(--font-mono); }
 html[data-reading-spacing="compact"] { --reading-line-height: 1.55; }

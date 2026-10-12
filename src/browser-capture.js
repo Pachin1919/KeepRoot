@@ -264,6 +264,7 @@ export class BrowserCapture {
         downloaded_bytes: fetched.downloaded_bytes,
         resolver_mode: fetched.resolver_mode,
         network_used: true,
+        network_mode: fetched.network_mode,
         browser_used: false,
         external_application_used: false,
       };

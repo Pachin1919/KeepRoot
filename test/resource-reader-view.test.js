@@ -3,6 +3,8 @@ import test from 'node:test';
 import { renderResourceReaderView } from '../src/ui/views/resource-reader-view.js';
 import { renderProjectResourceFolderGroup } from '../src/ui/views/project-resources-view.js';
 import { readerLinkTokens } from '../src/resource-reader-service.js';
+import {renderSearchView} from '../src/ui/views/search-view.js';
+import fs from 'node:fs';
 
 const base = '/projects/P-reader';
 const returnHref = `${base}/resources?mode=table&view=VIEW-one&fulltext_terms=a%26b&folder=notes%2Fdeep`;
@@ -10,6 +12,34 @@ const model = (overrides = {}) => ({ project: { id: 'P-reader', name: 'Reader Pr
   detailsHref: `${base}/resources/detail?path=notes%2Fsample.md`, resources: [{ resource_id: 'R-one', name: 'sample.md', relative_path: 'notes/sample.md' }],
   reader: { project_id: 'P-reader', resource_id: 'R-one', name: 'sample.md', relative_path: 'notes/sample.md', sha256: 'abc123', bytes: 20, kind: 'markdown', text: '# Title\n\nReadable body.' }, ...overrides });
 const render = (value, locale = 'en') => renderResourceReaderView(value, { csrfToken: 'csrf-reader', locale });
+
+test('Reader folds bounded YAML properties, retains editor source, and serves Chinese collapsed-diff phrases',()=>{
+ const text='---\r\ntitle: 月度观察\r\ntype: fictional-demo\r\n---\r\n\r\n# 正文\r\n北区。\r\n';
+ const html=render(model({reader:{...model().reader,text}}),'zh-CN');
+ assert.match(html,/<details class="reader-source-metadata"><summary>属性<\/summary><pre>title: 月度观察/u);
+ assert.match(html,/<h1 id="reader-heading-正文">正文<\/h1>/u);assert.doesNotMatch(html,/<h2[^>]*>title:/u);
+ const editing=render(model({manual:{text,requestKey:'properties',readHref:base+'/resources/read?resource_id=R-one'}}));assert.ok(editing.includes(text));
+ const bundle=fs.readFileSync(new URL('../src/vendor/codemirror/reader-editor.js',import.meta.url),'utf8').replace(/\\u([0-9a-f]{4})/giu,(_,hex)=>String.fromCharCode(Number.parseInt(hex,16)));assert.ok(bundle.includes('$ 行未修改'));
+});
+
+test('body search describes body keywords and Reader labels its exact search return',()=>{
+ const html=renderSearchView({project:{id:'P',name:'Project'},scope:'body',query:'北区',items:[]},{locale:'zh-CN'});
+ const main=html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/u)?.[1];assert.ok(main);
+ assert.match(main,/<label for="search-page-query">正文关键词<\/label>/u);assert.match(main,/搜索已注册材料的正文索引/u);assert.doesNotMatch(main,/不读取文件内容/u);
+ const globalSearch=html.match(/<dialog[^>]*id="atlas-search"[^>]*>([\s\S]*?)<\/dialog>/u)?.[1];assert.ok(globalSearch);assert.match(globalSearch,/<form class="search-form" method="get" action="\/search">/u);
+ const reader=render(model({returnHref:base+'/search?q=北区&scope=body'}),'zh-CN');assert.match(reader,/>返回搜索<\/a>/u);
+});
+
+test('Reader edit and read-only change review load the offline editor and preserve exact draft source', () => {
+  const text='\uFEFF---\r\ntitle: 原文\r\n---\r\n\r\n[[未知目标]]\r\n';
+  const editing=render(model({manual:{text,requestKey:'preview',readHref:base+'/resources/read?resource_id=R-one',expectedSha256:'abc',expectedFileId:'file'}}));
+  assert.match(editing,/<script type="module" src="\/ui\/reader-editor.js"><\/script>/u);
+  assert.match(editing,/data-reader-editor data-reader-format="markdown"/u);
+  assert.ok(editing.includes(text));assert.doesNotMatch(editing,/<section class="reader-edit-versions"/u);
+  const preview=render(model({manual:{readHref:base+'/resources/read?resource_id=R-one',update:{update_id:'U',revision:1,status:'preview_ready',baseline:{text},current:{text,sha256:'abc'},proposed:{text:text+'新增\r\n',sha256:'new'}}}}));
+  assert.match(preview,/data-reader-original data-reader-source=/u);assert.match(preview,/class="reader-diff-legend"/u);
+  assert.doesNotMatch(preview,/<pre>\uFEFF/u);assert.match(preview,/resources\/edit\/confirm/u);
+});
 
 test('Reader groups same-named resources by folder without losing identity, return scope or escaped full names', () => {
   const html = render(model({ resources: [
@@ -133,7 +163,8 @@ test('Readable registered rows carry reader URLs with return scope while table b
   const url = new URL(href.replaceAll('&amp;', '&'), 'http://atlas.local');
   const restored = new URL(url.searchParams.get('return_to'), 'http://atlas.local');
   assert.equal(restored.searchParams.get('view'), 'VIEW-one'); assert.equal(restored.searchParams.get('fulltext_terms'), 'a&b');
-  assert.equal(restored.searchParams.get('resource_id'), 'R-md');
+  assert.equal(restored.searchParams.has('resource_id'), false);
+  assert.equal(restored.searchParams.has('path'), false);
   assert.equal([...html.matchAll(/data-reader-href=/gu)].length, 2);
   assert.match(html, /resource_id=R-csv/u);
   assert.match(html, /data-work-source data-resource-id="R-csv"[^>]*checked/u);

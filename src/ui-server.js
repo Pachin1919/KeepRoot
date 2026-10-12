@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { isPathInside } from './paths.js';
 import { Bootstrap } from './bootstrap.js';
 import {
   contentComparisonSupported, contentFilePath,
@@ -14,6 +15,7 @@ import { escapeHtml, renderNav } from './ui/components.js';
 import { translateUi } from './ui/i18n.js';
 import { uiStyles } from './ui/styles.js';
 import { renderSettingsView } from './ui/views/settings-view.js';
+import { renderProductDemoView } from './ui/views/product-demo-view.js';
 import { loadLanguageCatalog, inspectLanguagePack, installLanguagePack } from './ui/language-packs.js';
 import { renderFileWorkView } from './ui/views/file-work-view.js';
 import { renderFileCompareView } from './ui/views/file-compare-view.js';
@@ -29,6 +31,7 @@ import { renderProjectResourceFolderGroup, renderProjectResourcesView, renderLin
 import { renderDataWorkView } from './ui/views/data-work-view.js';
 import { renderWorkTargetView } from './ui/views/work-target-view.js';
 import { renderSaveResultView } from './ui/views/save-result-view.js';
+import { boardDeliveryPreview } from './ui/services/board-delivery-preview.js';
 import { renderCaptureSourceView } from './ui/views/capture-source-view.js';
 import { renderDocumentUpdateView } from './ui/views/document-update-view.js';
 import { renderReferenceRepairView } from './ui/views/reference-repair-view.js';
@@ -37,6 +40,7 @@ import { createDocumentUpdateService } from './document-update-service.js';
 import { renderContentLocationView } from './ui/views/content-location-view.js';
 import { createContentLocationService } from './content-location-service.js';
 import { createResourceReaderService } from './resource-reader-service.js';
+import { Catalog } from './catalog.js';
 import { boundedRecipeDraft, toolboxErrorKey } from './ui/toolbox-flow.js';
 import { renderToolboxView } from './ui/views/toolbox-view.js';
 import { renderResourceReaderView } from './ui/views/resource-reader-view.js';
@@ -284,6 +288,10 @@ const UI_IMAGE_ASSETS = new Map([
 
 // Fixed bundled PDF.js 6.4.299 assets; no request path is used as a filesystem path.
 const PDF_READER_ASSETS = new Map([
+  ['/ui/activity-workspace.js', { file: new URL('./ui/activity-workspace.js', import.meta.url), mime: 'text/javascript; charset=utf-8' }],
+  ['/ui/resource-graph.js', { file: new URL('./ui/resource-graph.js', import.meta.url), mime: 'text/javascript; charset=utf-8' }],
+  ['/ui/reader-editor.js', { file: new URL('./ui/reader-editor.js', import.meta.url), mime: 'text/javascript; charset=utf-8' }],
+  ['/assets/codemirror/reader-editor.js', { file: new URL('./vendor/codemirror/reader-editor.js', import.meta.url), mime: 'text/javascript; charset=utf-8' }],
   ['/ui/pdf-reader.js', { file: new URL('./ui/pdf-reader.js', import.meta.url), mime: 'text/javascript; charset=utf-8' }],
   ...['pdf.mjs', 'pdf.worker.mjs'].map(name => [`/assets/pdfjs/build/${name}`, { file: new URL(`../assets/pdfjs/build/${name}`, import.meta.url), mime: 'text/javascript; charset=utf-8' }]),
 ]);
@@ -326,12 +334,13 @@ function projectResourceRelinkPath(entry, value) {
   return { filePath: resolved, relativePath: path.relative(entry.root, resolved).replaceAll('\\', '/') };
 }
 
-function settingsReturnHref(value) {
+function settingsReturnHref(value, allowDemo = false) {
   const candidate = String(value ?? '').trim();
   if (!candidate.startsWith('/') || candidate.startsWith('//')) return '/projects';
   try {
     const parsed = new URL(candidate, 'http://atlas.local');
     if (parsed.origin !== 'http://atlas.local') return '/projects';
+    if (allowDemo && parsed.pathname === '/demo') return `${parsed.pathname}${parsed.search}`;
     return /^\/(?:projects(?:\/|$)|files(?:\/|$)|work(?:\/|$)|saves(?:\/|$)|activity(?:\/|$)|search(?:\/|$)|import(?:\/|$)|toolbox(?:\/|$))/u.test(parsed.pathname)
       ? `${parsed.pathname}${parsed.search}`
       : '/projects';
@@ -365,6 +374,7 @@ export async function startAtlasUiServer({
   selectionSweepIntervalMs = 60_000,
   queueLifetimeMs = temporaryRecordLifetimeMs,
   resourceControl: injectedResourceControl = null,
+  demoShowcase = null,
   captureSourceOptions = {},
   dataWorkService = null,
   hostSessionOptions = {},
@@ -453,6 +463,7 @@ export async function startAtlasUiServer({
   const projectViews = registry?.ledger?.projectViews
     ? createProjectViewService({ stateDir, registry, installationRoot })
     : null;
+  const readerCatalog = projectViews ? new Catalog({stateDir,registry}) : null;
   const requireProjectViews = () => {
     if (!projectViews) throw new Error('Saved Resource Views require the persistent Atlas Registry.');
     return projectViews;
@@ -764,11 +775,22 @@ export async function startAtlasUiServer({
   }, {
     workspaceHref: '/projects', ...displayOptions(),
   }));
-  const renderModuleAvailability = (response, extra = {}, statusCode = 200) => sendPage(response, statusCode, renderModuleAvailabilityView({
-    modules: moduleAvailability.list().map((module) => ({ ...module, request_key: `${module.module_id}:${crypto.randomUUID()}` })),
-    local_modules: localModules.list(), local_revision: localModules.revision(),
-    ...extra,
-  }, { csrfToken, ...displayOptions() }));
+  const renderModuleAvailability = (response, extra = {}, statusCode = 200) => {
+    let entry = null;
+    if (extra.module_continue?.project_id) {
+      try { entry = projectEntry(extra.module_continue.project_id); } catch { /* Retain the failed draft without offering unavailable resources. */ }
+    }
+    const localResources = entry && resourceControl ? resourceControl.projectResources(entry.project.id)
+      .filter(fact => fact.status === 'active' && fact.relationship_to_project === 'stored_in'
+        && fact.last_known_location?.project_id === entry.project.id && fact.path
+        && path.extname(fact.path).toLowerCase() === '.txt' && isPathInside(entry.root, fact.path))
+      .map(fact => ({ resource_id: fact.resource_id, name: path.relative(entry.root, fact.path).replaceAll('\\', '/') })) : [];
+    sendPage(response, statusCode, renderModuleAvailabilityView({
+      modules: moduleAvailability.list().map((module) => ({ ...module, request_key: `${module.module_id}:${crypto.randomUUID()}` })),
+      local_modules: localModules.list(), local_revision: localModules.revision(),
+      ...extra, local_project: entry?.project ?? null, local_resources: localResources, projects: activeProjects(),
+    }, { csrfToken, ...displayOptions(), project: entry?.project ?? null }));
+  };
   const renderBootstrapConnect = (response, model, statusCode = 200) => sendPage(response, statusCode, renderBootstrapConnectView(model, {
     csrfToken, workspaceHref: '/projects', ...displayOptions(),
   }));
@@ -817,8 +839,8 @@ export async function startAtlasUiServer({
     return { project, location, root: projectDirectory(location), base: `/projects/${encodeURIComponent(projectId)}` };
   };
   const readerReturnHref = (entry,value) => {
-    if (typeof value !== 'string' || /[\\\r\n]/u.test(value)) return entry.base + '/resources';
-    try { const parsed=new URL(value,'http://atlas.local'); return parsed.origin==='http://atlas.local' && parsed.pathname===entry.base+'/resources' ? parsed.pathname+parsed.search : entry.base+'/resources'; } catch { return entry.base+'/resources'; }
+    if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || /[\x00-\x20\\]/u.test(value)) return entry.base + '/resources';
+    try { const parsed=new URL(value,'http://atlas.local'); if (parsed.origin!=='http://atlas.local' || !['resources','search','files'].some(route=>parsed.pathname===entry.base+'/'+route && value.split(/[?#]/u)[0]===entry.base+'/'+route)) return entry.base+'/resources'; if (parsed.pathname===entry.base+'/resources') for (const key of ['path','resource_id','graph','fragment']) parsed.searchParams.delete(key); return parsed.pathname+parsed.search; } catch { return entry.base+'/resources'; }
   };
   const toolboxMaterialFact=(entry,id)=>{
     const fact=workSourceFact(entry,id);
@@ -830,7 +852,7 @@ export async function startAtlasUiServer({
     const resources=[];
     if(project && resourceControl)for(const fact of resourceControl.projectResources(project.id)){try{resources.push(workSourceFact(projectEntry(project.id),fact.resource_id));}catch{}}
     const folders=project ? projectImport.projectChoices().find(item=>item.id===project.id && item.available)?.folders ?? []:[];
-    sendPage(response,status,renderToolboxView({project,projects:activeProjects(),resources,folders,paused:!tableWorkEnabled(),capture_paused:!captureSourceModule || !moduleAvailability.get('atlas.capture-source').enabled,markdown:{request_key:'toolbox-md:'+crypto.randomUUID()},...extra},{csrfToken,...displayOptions()}));
+    sendPage(response,status,renderToolboxView({project,projects:activeProjects(),resources,folders,local_modules:localModules.list().map(({module_id,module_version,enabled})=>({module_id,module_version,enabled})),paused:!tableWorkEnabled(),capture_paused:!captureSourceModule || !moduleAvailability.get('atlas.capture-source').enabled,markdown:{request_key:'toolbox-md:'+crypto.randomUUID()},...extra},{csrfToken,...displayOptions()}));
   };
   const toolboxSaveReturn=(record,value)=>{
     try{const parsed=new URL(value,'http://atlas.local');return parsed.origin==='http://atlas.local' && parsed.pathname==='/toolbox' && parsed.searchParams.get('project_id')===record.project?.id ? '/toolbox?project_id='+encodeURIComponent(record.project.id):null;}catch{return null;}
@@ -1084,6 +1106,11 @@ export async function startAtlasUiServer({
       catch { navigationContext.getStore().projectUnavailable = true; }
     }
     try {
+      if (url.pathname === '/demo' && request.method === 'GET' && demoShowcase) {
+        const entry = projectEntry(demoShowcase.project_id);
+        sendPage(response, 200, renderProductDemoView(demoShowcase, { ...displayOptions(), project: entry.project }));
+        return;
+      }
       if (request.method === 'POST' && !tableWorkEnabled()) {
         const multiMutation = url.pathname.match(/^\/work\/(DWT-[a-f0-9]{32})\/(?:action|reuse|conflict|save\/review|save\/confirm)$/u);
         const singleMutation = url.pathname.match(/^\/data-work\/(DWT-[a-f0-9]{32})\/(?:action|save\/review|save\/confirm)$/u);
@@ -1322,7 +1349,8 @@ export async function startAtlasUiServer({
           try { protected_rounds = recovery.protectedRoundsForSave({ projectId: record.project.id, saveId: id, targetPath: record.target?.resource_path }); }
           catch { /* A recovery lookup failure must not hide the original Save receipt. */ }
           finally { recovery.dispose(); }
-          sendPage(response, 200, renderSaveResultView({ ...reviewed, capture_source: captureRead, board_delivery, protected_rounds, toolbox_return, csrf: csrfToken }, displayOptions()));
+          const portable_preview = boardDeliveryPreview(saveService, record);
+          sendPage(response, 200, renderSaveResultView({ ...reviewed, capture_source: captureRead, board_delivery, portable_preview, protected_rounds, toolbox_return, csrf: csrfToken }, displayOptions()));
           return;
         }
         if (request.method === 'POST' && action) {
@@ -1342,7 +1370,7 @@ export async function startAtlasUiServer({
           return;
         }
       }
-      if (url.pathname === '/ui/pdf-reader.js' || url.pathname.startsWith('/assets/pdfjs/')) {
+      if (['/ui/pdf-reader.js','/ui/reader-editor.js','/ui/resource-graph.js','/ui/activity-workspace.js'].includes(url.pathname) || url.pathname.startsWith('/assets/pdfjs/') || url.pathname.startsWith('/assets/codemirror/')) {
         const asset = PDF_READER_ASSETS.get(url.pathname);
         if (request.method !== 'GET' || url.search || !asset) { response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); response.end('Asset unavailable.'); return; }
         try {
@@ -1433,7 +1461,7 @@ export async function startAtlasUiServer({
         return;
       }
       if (url.pathname === '/activity/fragment' && request.method === 'GET') {
-        sendHtml(response, 200, renderActivityFragment(activityModel(url.searchParams.get('selected')), { csrfToken }), { desktopBridge: desktopPickerEnabled });
+        sendHtml(response, 200, renderActivityFragment(activityModel(url.searchParams.get('selected')), { csrfToken, ...displayOptions() }), { desktopBridge: desktopPickerEnabled });
         return;
       }
       if (url.pathname === '/activity/events' && request.method === 'GET') {
@@ -2842,7 +2870,8 @@ export async function startAtlasUiServer({
       if (url.pathname === '/toolbox' && request.method === 'GET') {
         const project = navigationContext.getStore().project ?? null;
         const notice_key = notices.get('toolbox:'+(project?.id ?? 'none')); notices.delete('toolbox:'+(project?.id ?? 'none'));
-        renderToolbox(response,project,{...toolboxDrafts.get(project?.id),notice_key}); return;
+        const selectedTool = url.searchParams.get('tool');
+        renderToolbox(response,project,{...toolboxDrafts.get(project?.id),...(['pipeline','aggregate','pivot','trend','markdown'].includes(selectedTool)?{tool:selectedTool}:{}),notice_key}); return;
       }
       const markdownRoute=url.pathname.match(/^\/projects\/([^/]+)\/toolbox\/markdown$/u);
       if(markdownRoute && request.method==='POST') {
@@ -2853,7 +2882,11 @@ export async function startAtlasUiServer({
         try {
           if(!captureSourceModule)throw new Error('Capture Source module is unavailable.');
           const prepared=(await captureSourceModule.invoke({protocol:MODULE_PROTOCOL_VERSION,module_id:'atlas.capture-source',project_id:entry.project.id,action:'capture-markdown',parameters:{url:markdown.url,folder:markdown.folder,name:markdown.name,requestKey:markdown.request_key,caller:{actor:'user',tool:'atlas-ui',client_run_id:'toolbox-markdown:'+entry.project.id}}})).data;
-          if(prepared.status==='export_required'){renderToolbox(response,entry.project,{markdown,notice_key:'export_error'},422);return;}
+          if(prepared.status==='export_required'){
+            const key=prepared.reason_code==='share_unavailable'?'share_unavailable':'share_unrecognized';
+            const notice=translateUi(displayOptions().locale,'toolbox.'+key,displayOptions().languageCatalog).replace('{status}',String(prepared.http_status ?? 'unknown'));
+            renderToolbox(response,entry.project,{markdown,notice},422);return;
+          }
           if(!prepared.project?.id || !prepared.target?.path) {
             renderToolbox(response,entry.project,{markdown,notice:translateUi(displayOptions().locale,'toolbox.capture_pending',displayOptions().languageCatalog)+' '+prepared.save_id+' ('+prepared.status+')'},409);return;
           }
@@ -2898,7 +2931,8 @@ export async function startAtlasUiServer({
         if (request.method === 'POST' && !equalSecret(csrfToken,form.get('csrf'))) { sendPage(response,403,errorView('Atlas UI session token is invalid.')); return; }
         const resourceId = String(form.get('resource_id') ?? '');
         const returnHref = readerReturnHref(entry,form.get('return_to'));
-        const readHref = entry.base + '/resources/read?' + new URLSearchParams({resource_id:resourceId,return_to:returnHref});
+        let readHref = entry.base + '/resources/read?' + new URLSearchParams({resource_id:resourceId,return_to:returnHref});
+        let readerUpdateId = null;
         const manualResources = resourceControl.projectResources(entry.project.id).flatMap(fact => {
           const location=fact.locations?.find(value=>value.project_id===entry.project.id && value.status==='active');
           return location ? [{resource_id:fact.resource_id,name:path.basename(location.path),relative_path:path.relative(entry.root,location.path).replaceAll('\\','/')}] : [];
@@ -2906,9 +2940,16 @@ export async function startAtlasUiServer({
         const manualResource=manualResources.find(value=>value.resource_id===resourceId);
         const renderManual = (manual,notice=null,status=200) => sendPage(response,status,renderResourceReaderView({project:entry.project,
           reader:{resource_id:resourceId,name:path.basename(manual.inspected?.relative_path ?? manual.update?.resource?.relative_path ?? manualResource?.relative_path ?? resourceId),relative_path:manual.inspected?.relative_path ?? manual.update?.resource?.relative_path ?? manualResource?.relative_path ?? '',bytes:manual.inspected?.baseline?.bytes ?? manual.update?.current?.bytes,sha256:manual.inspected?.baseline?.sha256 ?? manual.update?.current?.sha256,kind:'text'},
-          returnHref,detailsHref:returnHref,manual:{...manual,notice,readHref},resources:manualResources}, {csrfToken,...displayOptions()}));
+          returnHref,detailsHref:returnHref,manual:{...manual,notice,readHref,readerUpdateId},resources:manualResources}, {csrfToken,...displayOptions()}));
         let inspected = null, update = null;
         try {
+          const requestedReceipt=form.get('reader_update_id');
+          if (requestedReceipt) {
+            const receipt=documentUpdate.show(String(requestedReceipt),{projectId:entry.project.id});
+            if (receipt.resource_id !== resourceId || receipt.source?.kind !== 'manual_edit') throw Error('This edit receipt belongs to a different material.');
+            readerUpdateId=receipt.update_id;
+            readHref += '&manual_update_id='+encodeURIComponent(readerUpdateId);
+          }
           if (!operation && request.method === 'GET') {
             inspected = documentUpdate.inspectManual({projectId:entry.project.id,resourceId});
             if (form.get('expected_sha256') !== inspected.baseline.sha256) throw new Error('Text changed. Reload the current file before editing.');
@@ -2927,25 +2968,39 @@ export async function startAtlasUiServer({
           if (!['confirm','undo','recover'].includes(operation)) throw new Error('Use the displayed manual edit action.');
           const result=operation === 'confirm' ? documentUpdate.confirmManual(updateId,args) : documentUpdate[operation](updateId,args);
           if (result.pending) { renderManual({update:result,requestKey:'manual-recover:' + crypto.randomUUID()},null,409); return; }
-          redirect(response,readHref + '&manual_update_id=' + encodeURIComponent(updateId)); return;
+          const receiptHref=new URL(readHref,'http://atlas.local');
+          receiptHref.searchParams.set('manual_update_id',updateId);
+          redirect(response,receiptHref.pathname+receiptHref.search); return;
         } catch(error) {
           if (update?.update_id) { try { update=documentUpdate.show(update.update_id,{projectId:entry.project.id}); } catch {} }
           renderManual({inspected,update,...(operation === 'preview' ? {text:String(form.get('text') ?? ''),expectedSha256:String(form.get('expected_sha256') ?? ''),expectedFileId:String(form.get('expected_file_id') ?? '')} : {}),requestKey:'manual-retry:' + crypto.randomUUID()},safeNotice(error),409); return;
         }
       }
       const resourceReaderMatch = url.pathname.match(/^\/projects\/([^/]+)\/resources\/(read|read-image|read-pdf)$/u);
+      const readerIndexMatch = url.pathname.match(/^\/projects\/([^/]+)\/search-index$/u);
+      if (readerIndexMatch && request.method === 'POST') {
+        const entry=projectEntry(decodeURIComponent(readerIndexMatch[1]));
+        const form=await readForm(request);
+        if (!equalSecret(csrfToken,form.get('csrf'))) {response.writeHead(403,{'content-type':'text/plain; charset=utf-8'});response.end('Atlas UI session token is invalid.');return;}
+        const query=String(form.get('q') ?? '').trim();
+        try {
+          if (!readerCatalog) throw Error('Catalog indexing is unavailable.');
+          readerCatalog.update({projectId:entry.project.id,caller:{actor:'user',tool:'atlas-ui',client_run_id:uiClientRunId}});
+          redirect(response,entry.base+'/search?'+new URLSearchParams({q:query,scope:'body'}));
+        } catch(error) {
+          sendPage(response,409,renderSearchView({query,items:[],scope:'body',project:entry.project,action:entry.base+'/search',
+            notice:safeNotice(error),refreshAction:entry.base+'/search-index'}, {csrfToken,...displayOptions(),project:entry.project}));
+        }
+        return;
+      }
       if (resourceReader && resourceReaderMatch && request.method === 'GET') {
         const projectId = decodeURIComponent(resourceReaderMatch[1]);
         const readerProjectDetail = registry.show(projectId);
         const project = readerProjectDetail.project;
         const base = `/projects/${encodeURIComponent(projectId)}`;
         const resourceId = url.searchParams.get('resource_id') ?? '';
-        let returnHref = `${base}/resources`;
         const requestedReturn = url.searchParams.get('return_to');
-        if (requestedReturn?.startsWith(`${base}/resources?`) && !/[\\\r\n]/u.test(requestedReturn)) {
-          const parsed = new URL(requestedReturn, 'http://atlas.local');
-          if (parsed.origin === 'http://atlas.local' && parsed.pathname === `${base}/resources`) returnHref = parsed.pathname + parsed.search;
-        }
+        const returnHref = readerReturnHref({base},requestedReturn);
         const imageRequest = resourceReaderMatch[2] === 'read-image';
         const pdfRequest = resourceReaderMatch[2] === 'read-pdf';
         let reader = { project_id: projectId, resource_id: resourceId, kind: 'unsupported', name: '', relative_path: '' };
@@ -3000,7 +3055,7 @@ export async function startAtlasUiServer({
             } catch (error) { status = 409; notice = safeNotice(error); }
           }
           if (!notice) {
-            try { relationships = resourceControl.relationshipFocus(projectId, resourceId, { depth: 1, status: 'active' }); }
+            try { relationships = resourceControl.relationshipFocus(projectId, resourceId, { depth: url.searchParams.get('relation_depth') === '2' ? 2 : 1, status: ['active','removed','all'].includes(url.searchParams.get('relation_status')) ? url.searchParams.get('relation_status') : 'active' }); }
             catch (error) { relationshipNotice = safeNotice(error); }
           }
         }
@@ -3010,8 +3065,19 @@ export async function startAtlasUiServer({
             if (value.resource_id !== resourceId || value.source?.kind !== 'manual_edit') throw new Error('This edit receipt belongs to a different material.'); manualUpdate=value;
           } catch(error) { notice=safeNotice(error); status=409; }
         }
-        const relatedWorks=dataWork.openProjectSessions(project).filter(work => work.sources?.some(source=>source.resource_id===resourceId));
-        sendPage(response, status, renderResourceReaderView({ project, reader, resources, returnHref, detailsHref, notice, links, relationships, relationshipNotice, relatedWorks, handoffRequestKey: 'reader-handoff:' + crypto.randomUUID(), manualUpdate }, { csrfToken, ...displayOptions() }));
+        const workSessions = dataWork.openProjectSessions(project);
+        const relatedWorks=workSessions.filter(work => work.sources?.some(source=>source.resource_id===resourceId));
+        let resourceFocusGraph = null;
+        if (relationships) {
+          const savedState = savedWork.stateForProject(projectId);
+          const readerModel = buildProjectResourcesModel({ ...projectEntry(projectId),
+            recentWork: readRecentWorkState(stateDir).items, currentActivity: readCurrentActivityState(stateDir).items,
+            resourceFacts: resourceControl.projectResources(projectId, { refresh: true }), savedWork: savedState.items,
+            savedWorkError: Boolean(savedState.error), focusedResourceId: resourceId, workSessions, stateDir });
+          if (readerModel.focused_resource) resourceFocusGraph = buildResourceFocusGraph({projectId,
+            resource: readerModel.focused_resource, relationshipFocus: relationships, impactLanes: readerModel.focused_resource.impact_lanes});
+        }
+        sendPage(response, status, renderResourceReaderView({ project, reader, resources, returnHref, detailsHref, notice, links, relationships, relationshipNotice, relatedWorks, resourceFocusGraph, graphMode: url.searchParams.get('graph') === '1', handoffRequestKey: 'reader-handoff:' + crypto.randomUUID(), manualUpdate }, { csrfToken, ...displayOptions() }));
         return;
       }
       const projectResourcesMatch = url.pathname.match(/^\/projects\/([^/]+)\/resources(?:\/(detail))?$/u);
@@ -3073,6 +3139,8 @@ export async function startAtlasUiServer({
           workSession: dataWork.currentProjectSession(entry.project),
           workSessions,
         });
+        resourcesModel.graph_mode = url.searchParams.get('graph') === '1';
+        resourcesModel.graph_return_href = url.pathname + url.search;
         resourcesModel.link_suggestions=resourceControl.listLinkedResourceSuggestions(entry.project.id);
         const pinnedResourceIds = new Set(projectHome.project(entry.project.id).pinned.filter((item) => item.kind === 'resource').map((item) => item.id));
         if (resourcesModel.focused_resource) {
@@ -3183,7 +3251,24 @@ export async function startAtlasUiServer({
           sendHtml(response, 200, renderProjectResourceFolderGroup(resourcesModel, displayOptions()));
           return;
         }
-        resourcesModel.reader_return_href = url.pathname + url.search;
+        // Legacy selection enters the existing Reader only after exact current identity checks.
+        const focus = resourcesModel.focused_resource;
+        if (resourceReader && !resourcesModel.graph_mode && focus?.resource_id && focus.open_available !== false && focus.relative_path
+          && (!url.searchParams.has('resource_id') || url.searchParams.get('resource_id') === focus.resource_id)) {
+          try {
+            const fact = resourceControl.projectResource(entry.project.id, focus.resource_id);
+            const locations = (fact.locations ?? []).filter(item => item.project_id === entry.project.id && item.status === 'active');
+            if (fact.resource?.status !== 'active' || locations.length !== 1) throw new Error('Unavailable Resource');
+            const selectedPath = contentFilePath(projectPath(entry.root, focus.relative_path));
+            const samePath = (left, right) => process.platform === 'win32' ? path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase() : path.resolve(left) === path.resolve(right);
+            if (!samePath(selectedPath, locations[0].path) || !fs.lstatSync(selectedPath).isFile()) throw new Error('Resource location mismatch');
+            if (url.searchParams.has('path') && !samePath(selectedPath, contentFilePath(projectPath(entry.root, url.searchParams.get('path'))))) throw new Error('Selection identity mismatch');
+            const returnHref = readerReturnHref(entry, url.pathname + url.search);
+            redirect(response, entry.base + '/resources/read?' + new URLSearchParams({resource_id:focus.resource_id,return_to:returnHref}));
+            return;
+          } catch { /* Missing, linked, mismatched or foreign selections keep their existing recovery surface. */ }
+        }
+        resourcesModel.reader_return_href = readerReturnHref(entry, url.pathname + url.search);
         renderProjectResources(response, resourcesModel);
         return;
       }
@@ -3379,6 +3464,24 @@ export async function startAtlasUiServer({
           renderProjectFiles(response, entry, data, { notice }); return;
         }
         if (action === 'search' && !operation && request.method === 'GET') {
+          if (url.searchParams.get('scope') === 'body') {
+            const query=String(url.searchParams.get('q') ?? '').trim();
+            let evaluation=null, notice=null;
+            let changedResourceIds=new Set();
+            try { if (query) {
+              const currentFacts=resourceControl?.projectResources(entry.project.id,{refresh:true}) ?? [];
+              changedResourceIds=new Set(currentFacts.filter(fact=>['changed','missing'].includes(fact.external_change?.status)).map(fact=>fact.resource_id));
+              evaluation=requireProjectViews().evaluateConfiguration({projectId:entry.project.id,
+              config:{membership:'registered_local',fulltext:{terms:query.split(/[\s,，]+/u).filter(Boolean),match:'any'}},limit:100,
+              continuation:url.searchParams.get('continuation') ?? null}); } }
+            catch(error) {notice=safeNotice(error);}
+            const returnHref=entry.base+'/search?'+new URLSearchParams({q:query,scope:'body'});
+            const items=(evaluation?.members ?? []).filter(item=>!changedResourceIds.has(item.resource_id)).map(item=>({...item,kind:'file',project_id:entry.project.id,project_name:entry.project.name,
+              href:entry.base+'/resources/read?'+new URLSearchParams({resource_id:item.resource_id,return_to:returnHref})}));
+            const more=evaluation?.continuation ? entry.base+'/search?'+new URLSearchParams({q:query,scope:'body',continuation:evaluation.continuation}) : null;
+            sendPage(response,200,renderSearchView({query,items,scope:'body',project:entry.project,action:entry.base+'/search',
+              index:evaluation?.fulltext_index,notice,more,changedSources:changedResourceIds.size,reviewHref:entry.base+'/resources',refreshAction:entry.base+'/search-index'}, {csrfToken,...displayOptions(),project:entry.project})); return;
+          }
           const data = searchProjectFiles(entry.root, url.searchParams.get('q'));
           renderProjectFiles(response, entry, data, { directory: 'Search results', query: url.searchParams.get('q') ?? '' }); return;
         }
@@ -3505,7 +3608,7 @@ export async function startAtlasUiServer({
         const stored = comparisons.get(compareResultMatch[1]);
         if (!stored?.comparison) {
           renderCompare(response, {
-            mode: 'unsupported',
+            mode: 'expired',
             message: 'This comparison is no longer available. Choose the files again.',
           }, 410);
           return;
@@ -3976,12 +4079,14 @@ export async function startAtlasUiServer({
         return;
       }
       if (url.pathname === '/modules' && request.method === 'GET') {
+        const toolboxProject = url.searchParams.get('project_id') ? projectEntry(url.searchParams.get('project_id')).project : null;
         const token = url.searchParams.get('continue_module_preview');
         const saved = token ? localModuleRunPreviews.get(token) : null;
         const valid = saved && now() - saved.at <= 10 * 60_000;
         renderModuleAvailability(response, {
           notice: url.searchParams.get('updated') === '1',
-          ...(valid ? { run_preview: { ...saved.preview, round_href: saved.protectedRoundId ? `/projects/${encodeURIComponent(saved.projectId)}/rounds/${encodeURIComponent(saved.protectedRoundId)}` : null } } : {}),
+          ...(toolboxProject ? { module_continue: { project_id: toolboxProject.id } } : {}),
+          ...(valid ? { module_continue: { project_id: saved.projectId, resource_id: saved.resourceId, target: saved.target }, run_preview: { ...saved.preview, round_href: saved.protectedRoundId ? `/projects/${encodeURIComponent(saved.projectId)}/rounds/${encodeURIComponent(saved.protectedRoundId)}` : null } } : {}),
           ...(!valid && url.searchParams.has('continue_project') ? { module_continue: {
             project_id: url.searchParams.get('continue_project'), resource_id: url.searchParams.get('continue_resource'), target: url.searchParams.get('continue_target'),
           } } : {}),
@@ -4039,8 +4144,10 @@ export async function startAtlasUiServer({
           const runToken = crypto.randomUUID();
           const runPreview = { ...preview, target, request_key: `ui-save:${crypto.randomUUID()}`, module_run_token: runToken };
           localModuleRunPreviews.set(runToken, { at: now(), projectId, resourceId, moduleId, target, projectTarget: projectRelative, preview: runPreview, protectedRoundId: null });
-          renderModuleAvailability(response, { run_preview: runPreview });
-        } catch (error) { renderModuleAvailability(response, { error: safeNotice(error) }, error.code === 'ATLAS_PATH_BOUNDARY' ? 403 : 409); }
+          renderModuleAvailability(response, { run_preview: runPreview, module_continue: { project_id: projectId, resource_id: resourceId, target } });
+        } catch (error) { renderModuleAvailability(response, { error: safeNotice(error), module_continue: {
+          project_id: String(form.get('project_id') ?? ''), resource_id: String(form.get('resource_id') ?? ''), target: String(form.get('target') ?? ''),
+        } }, error.code === 'ATLAS_PATH_BOUNDARY' ? 403 : 409); }
         return;
       }
       if (url.pathname === '/modules/local-protect-preview' && request.method === 'POST') {
@@ -4116,7 +4223,7 @@ export async function startAtlasUiServer({
         return;
       }
       if (url.pathname === '/settings' && request.method === 'GET') {
-        const returnHref = settingsReturnHref(url.searchParams.get('return_to'));
+        const returnHref = settingsReturnHref(url.searchParams.get('return_to'), Boolean(demoShowcase));
         sendPage(response, 200, renderSettingsView({ preferences, runtime }, {
           ...displayOptions(), workspaceHref: '/projects', csrfToken, saved: url.searchParams.get('saved') === '1', returnHref,
         }));
@@ -4129,7 +4236,7 @@ export async function startAtlasUiServer({
           response.end('Atlas UI session token is invalid.');
           return;
         }
-        const returnHref = settingsReturnHref(form.get('return_to'));
+        const returnHref = settingsReturnHref(form.get('return_to'), Boolean(demoShowcase));
         if (['preview_language_pack', 'install_language_pack'].includes(form.get('action'))) {
           const packText = form.get('language_pack') ?? '';
           try {
@@ -4676,6 +4783,7 @@ export async function startAtlasUiServer({
     contentLocations?.dispose();
     if (ownsResourceControl) resourceControl.dispose();
     projectViews?.dispose();
+    readerCatalog?.dispose();
     boards?.dispose();
     throw error;
   }
@@ -4690,6 +4798,7 @@ export async function startAtlasUiServer({
     contentLocations?.dispose();
     if (ownsResourceControl) resourceControl.dispose();
     projectViews?.dispose();
+    readerCatalog?.dispose();
     settleClosed();
   });
   const workspaceUrl = `http://${host}:${address.port}/`;
@@ -4715,6 +4824,7 @@ export async function startAtlasUiServer({
         contentLocations?.dispose();
         if (ownsResourceControl) resourceControl.dispose();
         projectViews?.dispose();
+    readerCatalog?.dispose();
         boards?.dispose();
         resolve();
         return;
@@ -4723,6 +4833,7 @@ export async function startAtlasUiServer({
         bootstrap.dispose();
         if (ownsResourceControl) resourceControl.dispose();
         projectViews?.dispose();
+    readerCatalog?.dispose();
         boards?.dispose();
         error ? reject(error) : resolve();
       });

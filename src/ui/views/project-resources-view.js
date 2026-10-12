@@ -1,3 +1,4 @@
+import { renderResourceGraphView } from './resource-graph-view.js';
 import { UI_DISPLAY_NAME } from '../brand.js';
 import { escapeHtml, renderFacts, renderNav, renderTopbar, renderUiClientScript } from '../components.js';
 import { uiStyles } from '../styles.js';
@@ -49,7 +50,7 @@ function readerHref(model, resource) {
   const returnHref = model.reader_return_href ?? resourceViewModeHref(model, mode);
   const returnUrl = new URL(returnHref, 'http://atlas.local');
   if (!model.reader_return_href && mode === 'files') returnUrl.searchParams.set('folder', model.selected_folder_path ?? '');
-  returnUrl.searchParams.set('resource_id', resource.resource_id);
+  for (const key of ['path', 'resource_id', 'graph', 'fragment']) returnUrl.searchParams.delete(key);
   return `${model.base}/resources/read?${new URLSearchParams({ resource_id: resource.resource_id, return_to: returnUrl.pathname + returnUrl.search })}`;
 }
 
@@ -293,7 +294,7 @@ function resourceViewMember(model, member, csrfToken) {
   const resource = member.resource ?? member;
   const name = resource.name ?? resource.display_name ?? resource.relative_path ?? resource.resource_id ?? t('resources.resource');
   const type = resource.type ?? resource.extension ?? t('resources.file');
-  const href = resourceHref(model, resource);
+  const href = readerHref(model, resource) ?? resourceHref(model, resource);
   const open = resource.relative_path ? `<form method="post" action="${escapeHtml(`${model.base}/resources/open`)}"><input type="hidden" name="csrf" value="${escapeHtml(csrfToken ?? '')}"><input type="hidden" name="path" value="${escapeHtml(resource.relative_path)}"><button class="text-link" type="submit">${h('resources.open')}</button></form>` : '';
   return { resource, name, type, href, open: readerLink(model, resource) + open, externalChange: externalChange(resource, member) };
 }
@@ -353,7 +354,7 @@ function resourceViewContent(model, csrfToken, locale, languageCatalog) {
   const content = mode === 'cards'
     ? rows.length ? cards : empty
     : rows.length ? `<div class="resource-view-table-wrap"><table class="resource-view-table"><thead><tr><th>${h('resources.work')}</th><th>${h('resources.user_properties')}</th><th>${h('resources.resource')}</th><th>${h('resources.type')}</th>${definitions.map((definition) => `<th>${escapeHtml(definition.name ?? definition.property_id ?? t('resources.property'))}</th>`).join('')}<th>${h('resources.file_status')}</th><th>${h('resources.open')}</th></tr></thead><tbody>${tableRows}</tbody></table></div>` : empty;
-  return `<main class="page resource-view-page" data-work-selection-context data-project-base="${escapeHtml(model.base)}" data-csrf="${escapeHtml(csrfToken ?? '')}" data-selected-folder="${escapeHtml(model.selected_folder_path ?? '')}" data-focus-path="${escapeHtml(model.focused_resource?.relative_path ?? '')}" data-active-view-id="${escapeHtml(view.active_view?.view_id ?? '')}"><div class="page-intro"><div><span class="eyebrow">${escapeHtml(t('resources.project_resources'))}</span><h1>${escapeHtml(t(mode === 'cards' ? 'resources.resource_cards' : 'resources.resource_table'))}</h1><p class="lede">${view.active_view ? escapeHtml(view.active_view.name) : escapeHtml(t('resources.current_dynamic_scope'))}</p></div></div>${workSelectionBar(model)}${resourceViewControls(model, csrfToken, locale, languageCatalog)}${resourceViewReceipt(view.evaluation, locale, languageCatalog)}${propertyCandidates}${propertyCandidateHistory}${rowCandidates}<details class="surface resource-property-tools"><summary>${escapeHtml(t('resources.user_properties_edit'))}</summary>${propertyDefinition}${propertyEdit}${undo}</details><section class="surface resource-view-results">${content}</section></main>`;
+  return `<main class="page resource-view-page" data-work-selection-context data-project-base="${escapeHtml(model.base)}" data-csrf="${escapeHtml(csrfToken ?? '')}" data-selected-folder="${escapeHtml(model.selected_folder_path ?? '')}" data-focus-path="${escapeHtml(model.focused_resource?.relative_path ?? '')}" data-active-view-id="${escapeHtml(view.active_view?.view_id ?? '')}"><div class="page-intro"><div><h1>${escapeHtml(t(mode === 'cards' ? 'resources.resource_cards' : 'resources.resource_table'))}</h1><p class="lede">${view.active_view ? escapeHtml(view.active_view.name) : escapeHtml(t('resources.current_dynamic_scope'))}</p></div></div>${workSelectionBar(model)}${resourceViewControls(model, csrfToken, locale, languageCatalog)}${resourceViewReceipt(view.evaluation, locale, languageCatalog)}${propertyCandidates}${propertyCandidateHistory}${rowCandidates}<details class="surface resource-property-tools"><summary>${escapeHtml(t('resources.user_properties_edit'))}</summary>${propertyDefinition}${propertyEdit}${undo}</details><section class="surface resource-view-results">${content}</section></main>`;
 }
 
 function resourcePinControl(model, resource, csrfToken) {
@@ -397,7 +398,7 @@ function fileRow(model, resource, focused) {
   const lastUsed = resource.last_worked_at
     ? `<time class="workspace-resource-last-used" datetime="${escapeHtml(resource.last_worked_at)}">${escapeHtml(lastWorked(resource))}</time>`
     : `<span class="workspace-resource-last-used">${escapeHtml(lastWorked(resource))}</span>`;
-  return `<div class="workspace-resource-file-row" data-resource-row data-resource-name="${escapeHtml(resource.name)}">${selector}<a class="workspace-resource-file${focused ? ' is-focused' : ''}" href="${escapeHtml(resourceHref(model, resource))}" data-resource-path="${escapeHtml(resource.relative_path)}" data-resource-name="${escapeHtml(resource.name)}"${focused ? ' data-focused-resource tabindex="-1"' : ''} data-open-resource${readerRowAttributes(model, resource)} data-reader-selection data-resource-context data-context-title="${escapeHtml(resource.name)}" data-context-body="${escapeHtml(`${category} · ${stateText} · ${relationshipText}`)}"><span class="workspace-resource-file-name"><strong>${escapeHtml(resource.name)}</strong><small>${escapeHtml(category)}</small></span><span class="workspace-resource-file-type">${escapeHtml(resource.type)}</span>${lastUsed}${state}</a></div>`;
+  return `<div class="workspace-resource-file-row" data-resource-row data-resource-name="${escapeHtml(resource.name)}">${selector}<a class="workspace-resource-file${focused ? ' is-focused' : ''}" href="${escapeHtml(readerHref(model, resource) ?? resourceHref(model, resource))}" data-resource-path="${escapeHtml(resource.relative_path)}" data-resource-name="${escapeHtml(resource.name)}"${focused ? ' data-focused-resource tabindex="-1"' : ''} data-open-resource${readerRowAttributes(model, resource)} data-reader-selection data-resource-context data-context-title="${escapeHtml(resource.name)}" data-context-body="${escapeHtml(`${category} · ${stateText} · ${relationshipText}`)}"><span class="workspace-resource-file-name"><strong>${escapeHtml(resource.name)}</strong><small>${escapeHtml(category)}</small></span><span class="workspace-resource-file-type">${escapeHtml(resource.type)}</span>${lastUsed}${state}</a></div>`;
 }
 
 function folderContainsPath(folder, focusedPath) {
@@ -494,48 +495,11 @@ function relationship(model, resource, csrfToken) {
   return `<section class="workspace-relationship"><h3>${h('resources.known_relationships')}</h3>${lineage}${projects}${!lineage && !projects ? `<p class="muted">${h('resources.no_extra_relationships')}</p>` : ''}</section>${focusPanel}${linked}`;
 }
 
-function resourceFocusGraph(resource, t, h) {
+function resourceFocusGraph(resource) {
+  if (!resource.resource_focus_graph) return '';
   const graph = resource.resource_focus_graph;
-  if (!graph) return '';
-  const arrowId = `focus-arrow-${resource.resource_id}`;
-  const column = (node) => node.kind === 'resource' ? Math.min(node.hop ?? 0, 2) : node.kind === 'work' ? 3 : 4;
-  const columns = [...new Set(graph.nodes.map(column))].sort((left, right) => left - right);
-  const xFor = (node) => 40 + columns.indexOf(column(node)) * 250;
-  const width = Math.max(250, columns.length * 250);
-  const grouped = new Map();
-  for (const node of graph.nodes) grouped.set(column(node), [...(grouped.get(column(node)) ?? []), node]);
-  const rowFor = new Map();
-  for (const group of grouped.values()) group.forEach((node, index) => rowFor.set(node.id, index));
-  const yFor = (node) => 36 + (rowFor.get(node.id) ?? 0) * 82;
-  const height = Math.max(180, ...[...grouped.values()].map((items) => 70 + items.length * 82));
-  const nodeMap = new Map(graph.nodes.map((node) => [node.id, node]));
-  const svgEdges = graph.edges.map((edge) => {
-    const source = nodeMap.get(edge.source); const target = nodeMap.get(edge.target);
-    if (!source || !target) return '';
-    const sx = xFor(source) + 210; const sy = yFor(source) + 32; const tx = xFor(target); const ty = yFor(target) + 32; const mid = (sx + tx) / 2;
-    return `<path data-focus-graph-edge="${escapeHtml(edge.id)}" data-edge-kind="${escapeHtml(edge.kind)}" d="M ${sx} ${sy} C ${mid} ${sy}, ${mid} ${ty}, ${tx} ${ty}" marker-end="url(#${escapeHtml(arrowId)})" fill="none" stroke="${edge.kind === 'linked_to' ? '#647d62' : '#bd8731'}" stroke-width="2"${edge.status === 'removed' ? ' stroke-dasharray="5 4"' : ''}><title>${escapeHtml(edge.kind === 'linked_to' ? edge.relationship_id : edge.derived_kind)}</title></path>`;
-  }).join('');
-  const nodeKindKey = (node) => node.kind === 'resource' ? 'relationship_focus.resource_node' : node.kind === 'work' ? 'relationship_focus.work_node' : 'relationship_focus.result_node';
-  const nodeFreshness = (node) => typeof node.freshness === 'string' ? node.freshness : node.freshness?.label ?? node.freshness?.status ?? null;
-  const svgNodes = graph.nodes.map((node) => {
-    const x = xFor(node); const y = yFor(node); const key = nodeKindKey(node);
-    const related = node.kind === 'work' ? (resource.related_work ?? []).find((item) => item.session_id === node.session_id) : null;
-    const label = String(related?.intent || node.label || node.id);
-    const status = nodeFreshness(node);
-    const shortened = [...label].slice(0, 27).join('') + ([...label].length > 27 ? '…' : '');
-    const visibleStatus = status && WORK_COPY_KEYS[status] ? t(WORK_COPY_KEYS[status]) : status;
-    const content = `<rect class="resource-focus-node${node.id === `resource:${resource.resource_id}` ? ' is-current' : ''}" x="${x}" y="${y}" width="210" height="64" rx="8"/><text class="resource-focus-kind" x="${x + 10}" y="${y + 17}" font-size="11">${h(key)}</text><text class="resource-focus-name" x="${x + 10}" y="${y + 35}" font-size="13">${escapeHtml(shortened)}</text>${visibleStatus ? `<text class="resource-focus-state" x="${x + 10}" y="${y + 53}" font-size="11">${escapeHtml(visibleStatus)}</text>` : ''}`;
-    const description = `${t(key)}: ${label}${status ? ` · ${status}` : ''}`;
-    return node.href ? `<a href="${escapeHtml(node.href)}" tabindex="0" aria-label="${escapeHtml(description)}"><title>${escapeHtml(description)}</title>${content}</a>` : `<g role="img" aria-label="${escapeHtml(description)}"><title>${escapeHtml(description)}</title>${content}</g>`;
-  }).join('');
-  const textNodes = graph.nodes.map((node) => `<li data-focus-graph-node="${escapeHtml(node.id)}"><a class="text-link" href="${escapeHtml(node.href)}">${escapeHtml(`${t(nodeKindKey(node))} · ${node.label}`)}</a>${nodeFreshness(node) ? ` · ${escapeHtml(nodeFreshness(node))}` : ''} <small class="mono">${escapeHtml(node.id)}</small></li>`).join('');
-  const textEdges = graph.edges.map((edge) => {
-    const line = edge.kind === 'linked_to'
-      ? `${t(`relationship_focus.${edge.direction}`)} · ${edge.status} · ${edge.relationship_id} · ${JSON.stringify(edge.evidence ?? {})}${edge.needs_review ? ` · ${t('relationship_focus.needs_review')}` : ''}`
-      : `${t(edge.derived_kind === 'source_to_work' ? 'relationship_focus.source_to_work' : 'relationship_focus.work_to_result')} · ${edge.work_session_id ?? ''} · ${edge.save_id ?? ''}${edge.impact?.label ? ` · ${edge.impact.label}` : ''}`;
-    return `<li data-focus-graph-edge="${escapeHtml(edge.id)}" data-edge-kind="${escapeHtml(edge.kind)}">${escapeHtml(line)}</li>`;
-  }).join('');
-  return `<section class="resource-focus-graph" data-resource-focus-graph><h4>${h('relationship_focus.graph_title')}</h4><p class="muted">${h('workspace.graph_scroll')}</p><div class="resource-focus-legend"><span>${h('workspace.graph_stored')}</span><span>${h('workspace.graph_processing')}</span></div><div class="resource-focus-canvas"><svg role="img" aria-label="${h('relationship_focus.graph_title')}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="width:${width}px;max-width:none"><defs><marker id="${escapeHtml(arrowId)}" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M 0 0 L 6 3 L 0 6 Z" fill="context-stroke"/></marker></defs>${svgEdges}${svgNodes}</svg></div><p class="muted">${h('relationship_focus.file_not_checked')}${graph.truncated ? ` · ${h('relationship_focus.truncated')}` : ''}</p><details class="resource-focus-records"><summary>${h('workspace.graph_records')}</summary><h5>${h('relationship_focus.graph_nodes')}</h5><ul class="path-list">${textNodes}</ul><h5>${h('relationship_focus.graph_edges')}</h5>${textEdges ? `<ul class="path-list">${textEdges}</ul>` : `<p class="muted">${h('relationship_focus.empty')}</p>`}</details></section>`;
+  const href = `/projects/${encodeURIComponent(graph.project_id)}/resources?` + new URLSearchParams({resource_id:graph.root_resource_id,graph:'1'});
+  return `<a class="reader-button" href="${escapeHtml(href)}">${h('relationship_focus.title')} →</a>`;
 }
 
 function representation(resource) {
@@ -614,7 +578,11 @@ function impactLanes(resource) {
 
 function boardReferences(model, resource, csrfToken) {
   if (!resource.resource_id) return '';
-  const references = resource.board_references ?? [];
+  // A Board can reference this Resource through multiple blocks; the Board
+  // navigation list offers one entry per Board revision, not per block.
+  const references = [...new Map((resource.board_references ?? []).map((item, index) => [
+    item.board_id ? `${item.board_id}:${item.revision ?? ''}` : `unidentified:${index}`, item,
+  ])).values()];
   const linked = references.length ? `<ul class="path-list">${references.map((item) => `<li>${item.href ? `<a class="text-link" href="${escapeHtml(item.href)}">${escapeHtml(item.title ?? item.board_id)}</a>` : `<strong>${escapeHtml(item.title ?? item.board_id)}</strong>`}<small>${h('work.revision')} ${escapeHtml(item.revision ?? t('work.not_recorded'))}</small></li>`).join('')}</ul>` : `<p class="muted">${h('resources.no_board_references')}</p>`;
   const boards = model.boards ?? [];
   const add = boards.length ? `<details><summary>${h('resources.add_resource_board')}</summary><div class="project-home-list">${boards.map((board) => `<form method="post" action="${escapeHtml(`${model.base}/boards/${encodeURIComponent(board.board_id)}/blocks/add`)}"><input type="hidden" name="csrf" value="${escapeHtml(csrfToken ?? '')}"><input type="hidden" name="base_revision" value="${escapeHtml(board.revision)}"><input type="hidden" name="block_type" value="material_reference"><input type="hidden" name="resource_id" value="${escapeHtml(resource.resource_id)}"><label>${h('work.version')} <select name="version_policy"><option value="follow_latest">${h('work.follow_latest')}</option><option value="pinned_version">${h('work.pin_recorded')}</option></select></label><button class="text-link" type="submit">${h('work.add_to_board',{title:board.title})}</button></form>`).join('')}</div></details>` : '';
@@ -623,7 +591,7 @@ function boardReferences(model, resource, csrfToken) {
 
 function focusPanel(model, csrfToken, locale, languageCatalog) {
   const resource = model.focused_resource;
-  if (!resource) return `<aside class="workspace-focus" data-resource-inspector><span class="workspace-kicker">${h('resources.selected_resource')}</span><h2>${h('resources.choose_resource')}</h2><p>${h('resources.choose_resource_help')}</p></aside>`;
+  if (!resource) return '';
   const location = resource.relative_path?.split('/').slice(0, -1).join('/') || resource.last_known_path || t('work.not_available');
   const source = resource.saved_work?.sources?.length ? resource.saved_work.sources.map((item) => item.path?.split(/[\\/]/u).pop()).filter(Boolean).join(' · ') : resource.saved_work?.source_path ? resource.saved_work.source_path.split(/[\\/]/u).pop() : resource.added_from?.origin_file?.split(/[\\/]/u).pop();
   const state = currentState(resource);
@@ -665,7 +633,7 @@ function explorer(model, csrfToken, locale, languageCatalog) {
   const savedViewState = model.resource_view?.active_view
     ? `${resourceViewReceipt(model.resource_view.evaluation)}${model.saved_view_empty ? `<p class="callout">${h('resources.saved_view_empty')}</p>` : ''}`
     : '';
-  return `<main class="workspace-visibility-page workspace-resource-page"><header class="workspace-resource-header"><div class="workspace-resource-heading"><div><span class="workspace-kicker">${escapeHtml(t('resources.project'))} / ${escapeHtml(model.project.name)}</span><h1>${escapeHtml(t('resources.title'))}</h1></div><a class="text-link" href="${escapeHtml(model.base)}">${escapeHtml(t('resources.project_home'))}</a></div><p class="sr-only">${escapeHtml(t('resources.folder_prompt'))}</p>${workSelectionBar(model)}<button class="action-button action-button-secondary workspace-file-list-toggle" type="button" data-resource-list-toggle aria-controls="project-resource-file-list" aria-expanded="true">${escapeHtml(t('resources.hide_file_list'))}</button>${resourceViewControls(model, csrfToken, locale, languageCatalog)}</header>${compactFolderNavigator(model, resourceTree)}${savedViewState}${model.focus_error ? `<p class="callout warn">${escapeHtml(model.focus_error)}</p>` : ''}<div class="workspace-resource-grid" data-resource-workspace data-project-id="${escapeHtml(model.project.id)}" data-project-name="${escapeHtml(model.project.name)}" data-project-base="${escapeHtml(model.base)}" data-selected-folder="${escapeHtml(model.selected_folder_path)}" data-selected-folder-explicit="${model.selected_folder_explicit ? 'true' : 'false'}" data-focus-path="${escapeHtml(model.focused_resource?.relative_path ?? '')}" data-active-view-id="${escapeHtml(model.resource_view?.active_view?.view_id ?? '')}" data-csrf="${escapeHtml(csrfToken ?? '')}"><section class="workspace-folder-navigator" data-folder-navigator><div class="workspace-pane-heading"><div><span class="workspace-kicker">${escapeHtml(t('resources.folder_navigator'))}</span></div><button class="workspace-text-button" type="button" data-collapse-all-folders>${escapeHtml(t('resources.collapse_all'))}</button></div><div class="workspace-folder-scroll"><div class="workspace-tree-root" data-resource-tree data-project-id="${escapeHtml(model.project.id)}"${model.focused_resource ? ` data-focus-path="${escapeHtml(model.focused_resource.relative_path)}"` : ''} data-open-action="${escapeHtml(`${model.base}/resources/open`)}" data-csrf="${escapeHtml(csrfToken ?? '')}"><a class="workspace-tree-root-row${rootSelected ? ' is-selected' : ''}" href="${escapeHtml(`${model.base}/resources?folder=`)}" data-folder-select data-folder-path=""><strong>${escapeHtml(model.project.name)}</strong><small>${escapeHtml(t('resources.project_root'))}</small></a>${tree}</div></div></section><div class="workspace-pane-resizer" role="separator" aria-label="${h('resources.resize_folders')}" aria-orientation="vertical" aria-valuemin="170" aria-valuemax="520" aria-valuenow="270" tabindex="0" data-resource-pane-resizer="folder"></div><section class="workspace-resource-list" id="project-resource-file-list" data-resource-file-list><div class="workspace-pane-heading"><div><span class="workspace-kicker">${escapeHtml(t('resources.files_in'))} <strong data-selected-folder-label>${escapeHtml(selectedFolderLabel)}</strong></span></div></div><div class="workspace-resource-list-scroll">${fileGroups}</div></section><div class="workspace-pane-resizer" role="separator" aria-label="${h('resources.resize_files')}" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="760" aria-valuenow="500" tabindex="0" data-resource-pane-resizer="list"></div>${focusPanel(model, csrfToken, locale, languageCatalog)}</div></main>`;
+  return `<main class="workspace-visibility-page workspace-resource-page"><header class="workspace-resource-header"><div class="workspace-resource-heading"><div><h1>${escapeHtml(t('resources.title'))}</h1></div><a class="text-link" href="${escapeHtml(model.base)}">${escapeHtml(t('resources.project_home'))}</a></div><p class="sr-only">${escapeHtml(t('resources.folder_prompt'))}</p>${workSelectionBar(model)}${model.focused_resource ? `<button class="action-button action-button-secondary workspace-file-list-toggle" type="button" data-resource-list-toggle aria-controls="project-resource-file-list" aria-expanded="true">${escapeHtml(t('resources.hide_file_list'))}</button>` : ''}${resourceViewControls(model, csrfToken, locale, languageCatalog)}</header>${compactFolderNavigator(model, resourceTree)}${savedViewState}${model.focus_error ? `<p class="callout warn">${escapeHtml(model.focus_error)}</p>` : ''}<div class="workspace-resource-grid${model.focused_resource ? '' : ' workspace-resource-grid-list'}" data-resource-workspace data-project-id="${escapeHtml(model.project.id)}" data-project-name="${escapeHtml(model.project.name)}" data-project-base="${escapeHtml(model.base)}" data-selected-folder="${escapeHtml(model.selected_folder_path)}" data-selected-folder-explicit="${model.selected_folder_explicit ? 'true' : 'false'}" data-focus-path="${escapeHtml(model.focused_resource?.relative_path ?? '')}" data-active-view-id="${escapeHtml(model.resource_view?.active_view?.view_id ?? '')}" data-csrf="${escapeHtml(csrfToken ?? '')}"><section class="workspace-folder-navigator" data-folder-navigator><div class="workspace-pane-heading"><div><span class="workspace-kicker">${escapeHtml(t('resources.folder_navigator'))}</span></div><button class="workspace-text-button" type="button" data-collapse-all-folders>${escapeHtml(t('resources.collapse_all'))}</button></div><div class="workspace-folder-scroll"><div class="workspace-tree-root" data-resource-tree data-project-id="${escapeHtml(model.project.id)}"${model.focused_resource ? ` data-focus-path="${escapeHtml(model.focused_resource.relative_path)}"` : ''} data-open-action="${escapeHtml(`${model.base}/resources/open`)}" data-csrf="${escapeHtml(csrfToken ?? '')}"><a class="workspace-tree-root-row${rootSelected ? ' is-selected' : ''}" href="${escapeHtml(`${model.base}/resources?folder=`)}" data-folder-select data-folder-path=""><strong>${escapeHtml(model.project.name)}</strong><small>${escapeHtml(t('resources.project_root'))}</small></a>${tree}</div></div></section><div class="workspace-pane-resizer" role="separator" aria-label="${h('resources.resize_folders')}" aria-orientation="vertical" aria-valuemin="170" aria-valuemax="520" aria-valuenow="270" tabindex="0" data-resource-pane-resizer="folder"></div><section class="workspace-resource-list" id="project-resource-file-list" data-resource-file-list><div class="workspace-pane-heading"><div><span class="workspace-kicker">${escapeHtml(t('resources.files_in'))} <strong data-selected-folder-label>${escapeHtml(selectedFolderLabel)}</strong></span></div></div><div class="workspace-resource-list-scroll">${fileGroups}</div></section><div class="workspace-pane-resizer" role="separator" aria-label="${h('resources.resize_files')}" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="760" aria-valuenow="500" tabindex="0" data-resource-pane-resizer="list"></div>${focusPanel(model, csrfToken, locale, languageCatalog)}</div></main>`;
 }
 
 function detail(model, csrfToken) {
@@ -721,9 +689,12 @@ function renderProjectResourcesView(model, options = {}) {
   const explorerBody = explorer(model, options.csrfToken, options.locale, options.languageCatalog);
   const resourceViewMode = model.resource_view?.mode;
   const resourceViewBody = ['table', 'cards'].includes(resourceViewMode) ? resourceViewContent(model, options.csrfToken, options.locale, options.languageCatalog) : null;
-  const body = model.mode === 'detail' ? detail(model, options.csrfToken) : resourceViewBody ?? explorerBody.replace('</main>', `${resourceLedgerLists(model)}</main>`);
+  const graph = model.graph_mode && model.focused_resource?.resource_focus_graph;
+  const graphOrigin = model.graph_return_href;
+  const graphBody = graph ? `<main class="workspace-graph-page"><header class="graph-page-heading"><a class="reader-button" href="${escapeHtml(graphOrigin.replace(/([?&])graph=1(&|$)/u,'$1').replace(/[?&]$/u,''))}">${h('resources.back_to_file_list')}</a><h1>${escapeHtml(model.focused_resource.name)}</h1>${externalChange(model.focused_resource)}</header><details class="graph-materials"><summary>${h('resources.folder_navigator')}</summary>${compactFolderNavigator(model,model.tree ?? {folders:[],files:[]})}${folderFileGroups(model,model.tree ?? {folders:[],files:[]})}</details>${renderResourceGraphView(graph,{locale:options.locale,returnHref:graphOrigin,workSessions:model.focused_resource.related_work})}</main>` : null;
+  const body = graphBody ?? (model.mode === 'detail' ? detail(model, options.csrfToken) : resourceViewBody ?? explorerBody.replace('</main>', `${resourceLedgerLists(model)}</main>`));
   const suggestionList = (model.link_suggestions ?? []).length ? `<section class="workspace-missing" data-resource-link-suggestions><h2>${h('resources.link_suggestions')}</h2><p>${h('resources.link_suggestions_help')}</p>${model.link_suggestions.map((item) => `<p><a href="${escapeHtml(`${model.base}/resources/link-suggestions/${encodeURIComponent(item.id)}`)}">${escapeHtml(item.proposal?.evidence?.reason ?? item.id)}</a><small> · ${h(`resources.link_suggestion_${item.status}`)}${item.validity === 'stale' ? ` · ${h('resources.link_suggestion_stale')}` : ''}</small></p>`).join('')}</section>` : '';
-  const main = model.mode === 'detail' ? `<main class="page">${body}</main>${suggestionList}` : body.replace('</main>', `${suggestionList}</main>`);
+  const main = graphBody ? body : model.mode === 'detail' ? `<main class="page">${body}</main>${suggestionList}` : body.replace('</main>', `${suggestionList}</main>`);
   const clientMessages = escapeHtml(JSON.stringify(resourceClientMessages(options.locale, options.languageCatalog)));
   return `<!doctype html><html lang="${normalizeUiLocale(options.locale)}" ${options.htmlAttributes ?? ''}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(model.project.name)} ${h('resources.title')} · ${UI_DISPLAY_NAME}</title><style>${uiStyles()}</style>${renderUiClientScript(true)}</head><body class="atlas-workspace-body" data-resource-messages="${clientMessages}"><div class="app-shell atlas-workspace-shell" style="${escapeHtml(options.railStyle ?? '')}">${renderNav('Resources', { ...options, project: model.project, interactive: true, workspaceHref: '/projects', resourcesHref: `${model.base}/resources`, settingsHref: options.settingsHref, locale: options.locale, languageCatalog: options.languageCatalog })}<div class="workspace">${renderTopbar({ section: translateUi(options.locale, 'resources.title', options.languageCatalog), project: model.project, resource: model.mode === 'detail' ? model.resource?.relative_path : model.selected_path, locale: options.locale, languageCatalog: options.languageCatalog })}${main}</div></div></body></html>`;
 }

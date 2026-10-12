@@ -56,6 +56,13 @@ test('protect/checkpoint/restore round-trips markdown, CSV, binary, new file, an
   const initial = f.recovery.protect({ projectId: id, paths: ['doc.md', 'rows.csv', 'image.bin', 'new.txt'], boardIds: [f.board.board_id], label: 'initial', requestKey: 'protect-1', caller: caller('round-1') });
   assert.equal(initial.revision, 1);
   assert.equal(initial.nodes.length, 1);
+  const recorded = f.recovery.list({ projectId: id })[0];
+  assert.equal(recorded.node_count, 1);
+  assert.equal(recorded.file_count, 4);
+  assert.equal(recorded.revision, initial.revision);
+  const persisted = JSON.parse(f.registry.ledger.db.prepare('SELECT state_json FROM recovery_rounds WHERE id=?').get(initial.round_id).state_json);
+  assert.equal(recorded.updated_at, persisted.updated_at);
+  assert.equal(recorded.created_at, initial.nodes[0].created_at);
   fs.writeFileSync(path.join(f.projectRoot, 'doc.md'), '# two\n');
   fs.writeFileSync(path.join(f.projectRoot, 'rows.csv'), 'name,value\nB,2\n');
   fs.writeFileSync(path.join(f.projectRoot, 'image.bin'), Buffer.from([9, 8, 7]));

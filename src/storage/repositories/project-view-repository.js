@@ -389,7 +389,14 @@ export class ProjectViewRepository {
       CASE WHEN cf.entry_id IS NOT NULL AND (${catalogIndex.terms.map(() => `(
         instr(cf.title, ?) > 0 OR instr(cf.headings, ?) > 0
         OR instr(cf.tags, ?) > 0 OR instr(cf.body, ?) > 0
-      )`).join(' OR ')}) THEN 1 ELSE 0 END AS catalog_term_match` : '';
+      )`).join(' OR ')}) THEN 1 ELSE 0 END AS catalog_term_match,
+      CASE
+        ${['body', 'headings', 'title', 'tags'].flatMap((field) => catalogIndex.terms.map(() => `
+          WHEN instr(cf.${field}, ?) > 0
+            THEN substr(cf.${field}, max(instr(cf.${field}, ?) - 80, 1), 400)
+        `)).join('')}
+        ELSE ''
+      END AS catalog_snippet` : '';
     const catalogJoins = catalogIndex ? `
       LEFT JOIN catalog_entries ce
         ON ce.project_id = ? AND ce.root_id = ?
@@ -407,6 +414,9 @@ export class ProjectViewRepository {
     for (const extension of extensions) parameters.push(`%${extension.toLowerCase()}`);
     if (catalogIndex) {
       for (const term of catalogIndex.terms) parameters.push(term, term, term, term);
+      for (const field of ['body', 'headings', 'title', 'tags']) {
+        for (const term of catalogIndex.terms) parameters.push(term, term);
+      }
       parameters.push(
         projectId, catalogIndex.rootId,
         catalogIndex.projectRootPath,

@@ -122,7 +122,12 @@ export function createSavedWorkService({ stateDir, saveService = null }) {
     if (state.error) throw state.error;
     return state.items;
   };
-  const find = (workId) => currentState().items.find((item) => item.work_id === workId || item.save_id === workId) ?? null;
+  const find = (workId) => {
+    const row = readSavedWorkState(stateDir).items.find((item) => item.work_id === workId || item.save_id === workId);
+    if (!row) return null;
+    // Identity is immutable; resolve moved Resource/Project paths for this receipt only.
+    return saveService ? validRecord(saveService.projectRecord(row)) : row;
+  };
   const activityItems = () => currentState().items.filter((item) => item.save_id && item.status === 'executed').map((item) => ({
     activity_id: item.save_id, work_id: item.save_id, save_id: item.save_id, file_path: item.result_path,
     project: item.project, initiated_by: { channel: item.channel === 'host' ? 'host' : 'desktop', agent: item.caller?.tool ?? null }, caller: item.caller ?? null,

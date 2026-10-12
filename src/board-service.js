@@ -8,6 +8,7 @@ import { createResourceControl } from './resource-control.js';
 import { SaveService } from './save-service.js';
 import { createSavedWorkService, savedResultFreshness } from './ui/services/saved-work-service.js';
 import { buildResourceImpactLanes } from './ui/services/resource-impact-service.js';
+import { renderMarkdown } from './markdown-reader.js';
 
 const BLOCK_TYPES = new Set(['material_reference', 'text', 'result_preview']);
 const VERSION_POLICIES = new Set(['follow_latest', 'pinned_version']);
@@ -72,19 +73,20 @@ function analysisProjectionHtml(projection) {
   if (!projection?.complete) return '';
   if (projection.kind === 'table_work_group_sum') {
     const max = Math.max(1, ...projection.groups.map((item) => Math.abs(item.sum)));
-    const rows = projection.groups.map((item) => {
+    const rows = projection.groups.map((item) => `<tr><th scope="row">${html(item.value || '(Empty category)')}</th><td>${html(item.sum)} ${html(projection.unit)}</td></tr>`).join('');
+    const bars = projection.groups.map((item) => {
       const width = Math.round(Math.abs(item.sum) / max * 100);
       const sign = item.sum < 0 ? 'negative' : item.sum > 0 ? 'positive' : 'zero';
       const left = item.sum < 0 ? `<span style="display:block;justify-self:end;width:${width}%;height:.8rem;background:#b95743"></span>` : '';
       const right = item.sum > 0 ? `<span style="display:block;width:${width}%;height:.8rem;background:#647d62"></span>` : '';
       return `<tr><th scope="row">${html(item.value || '(Empty category)')}</th><td>${html(item.sum)} ${html(projection.unit)}</td><td><span class="board-analysis-bar" role="img" data-sign="${sign}" aria-label="${html(item.value)}: ${html(item.sum)} ${html(projection.unit)}" style="display:inline-grid;grid-template-columns:1fr 1px 1fr;align-items:center;width:180px;height:.8rem">${left}<span style="height:.8rem;background:#4d4943"></span>${right}</span></td></tr>`;
     }).join('');
-    return `<section class="board-analysis-projection"><p><strong>${html(projection.formula)}(${html(projection.measure)}) by ${html(projection.dimension)}</strong> · ${html(projection.unit)} · empty values ${html(projection.null_policy)}</p><p><strong>Total: ${html(projection.grand_total)} ${html(projection.unit)}</strong> · ${html(projection.group_count)} groups</p><div class="table-scroll"><table><thead><tr><th>Category</th><th>Value</th><th>Relative bar</th></tr></thead><tbody>${rows}</tbody></table></div>${analysisSourceHtml(projection)}</section>`;
+    return `<div class="board-analysis-projection"><p><strong>${html(projection.formula)}(${html(projection.measure)}) by ${html(projection.dimension)}</strong> · ${html(projection.unit)} · empty values ${html(projection.null_policy)}</p><p><strong>Total: ${html(projection.grand_total)} ${html(projection.unit)}</strong> · ${html(projection.group_count)} groups</p><div class="table-scroll"><table><thead><tr><th>Category</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table></div><details class="board-chart"><summary>相对数值图 · Relative bars</summary><div class="table-scroll"><table><thead><tr><th>Category</th><th>Value</th><th>Relative bar</th></tr></thead><tbody>${bars}</tbody></table></div></details>${analysisSourceHtml(projection)}</div>`;
   }
   if (projection.kind === 'table_work_pivot_sum') {
     const columns = projection.column_order ?? [];
     const rows = projection.matrix.map((item) => `<tr><th scope="row">${html(item.row || '(Empty category)')}</th>${item.values.map((value) => `<td>${html(value)}</td>`).join('')}<td>${html(item.total)}</td><td>${item.share_percent == null ? '—' : `${html(item.share_percent)}%`}</td><td>${html(item.rank ?? '—')}</td></tr>`).join('');
-    return `<section class="board-analysis-projection"><p><strong>Pivot ${html(projection.row_dimension)} × ${html(projection.column_dimension)}</strong> · sum(${html(projection.measure)}) · ${html(projection.unit)} · empty values ${html(projection.null_policy)}</p><p><strong>Grand total: ${html(projection.grand_total)} ${html(projection.unit)}</strong></p><div class="table-scroll"><table><thead><tr><th>${html(projection.row_dimension)}</th>${columns.map((value) => `<th>${html(value)}</th>`).join('')}<th>Total</th><th>Share</th><th>Rank</th></tr></thead><tbody>${rows}</tbody></table></div>${analysisSourceHtml(projection)}</section>`;
+    return `<div class="board-analysis-projection"><p><strong>Pivot ${html(projection.row_dimension)} × ${html(projection.column_dimension)}</strong> · sum(${html(projection.measure)}) · ${html(projection.unit)} · empty values ${html(projection.null_policy)}</p><p><strong>Grand total: ${html(projection.grand_total)} ${html(projection.unit)}</strong></p><div class="table-scroll"><table><thead><tr><th>${html(projection.row_dimension)}</th>${columns.map((value) => `<th>${html(value)}</th>`).join('')}<th>Total</th><th>Share</th><th>Rank</th></tr></thead><tbody>${rows}</tbody></table></div>${analysisSourceHtml(projection)}</div>`;
   }
   if (projection.kind === 'table_work_trend_sum') {
     const points = projection.monthly_totals;
@@ -92,14 +94,20 @@ function analysisProjectionHtml(projection) {
     const min = Math.min(0, ...values); const max = Math.max(0, ...values); const span = Math.max(1, max - min);
     const chartPoints = points.map((item, index) => `${20 + index * (760 / Math.max(1, points.length - 1))},${170 - ((item.sum - min) / span) * 130}`).join(' ');
     const rows = points.map((item) => `<tr><th scope="row">${html(item.month)}</th><td>${html(item.sum)} ${html(projection.unit)}</td></tr>`).join('');
-    return `<section class="board-analysis-projection"><p><strong>${html(projection.date_field)} · ${html(projection.start_month)}–${html(projection.end_month)}</strong> · sum(${html(projection.measure)}) · ${html(projection.unit)} · empty values ${html(projection.null_policy)}</p><p>Previous ${html(projection.previous_period.start_month)}–${html(projection.previous_period.end_month)}: ${html(projection.previous_period.total)} ${html(projection.unit)} · Current ${html(projection.current_period.start_month)}–${html(projection.current_period.end_month)}: ${html(projection.current_period.total)} ${html(projection.unit)} · Change ${html(projection.delta)} ${html(projection.unit)} · Growth ${projection.growth_percent == null ? '—' : `${html(projection.growth_percent)}%`}</p><svg role="img" aria-label="Monthly trend" viewBox="0 0 800 190" width="100%" height="190"><line x1="20" y1="${170 - ((0 - min) / span) * 130}" x2="780" y2="${170 - ((0 - min) / span) * 130}" stroke="#9b958a"/><polyline points="${chartPoints}" fill="none" stroke="#647d62" stroke-width="3"/>${points.map((item, index) => `<text x="${20 + index * (760 / Math.max(1, points.length - 1))}" y="${170 - ((item.sum - min) / span) * 130 - 8}" text-anchor="middle">${html(item.sum)}</text>`).join('')}</svg><div class="table-scroll"><table><thead><tr><th>Month</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table></div>${analysisSourceHtml(projection)}</section>`;
+    return `<div class="board-analysis-projection"><p><strong>${html(projection.date_field)} · ${html(projection.start_month)}–${html(projection.end_month)}</strong> · sum(${html(projection.measure)}) · ${html(projection.unit)} · empty values ${html(projection.null_policy)}</p><p>Previous ${html(projection.previous_period.start_month)}–${html(projection.previous_period.end_month)}: ${html(projection.previous_period.total)} ${html(projection.unit)} · Current ${html(projection.current_period.start_month)}–${html(projection.current_period.end_month)}: ${html(projection.current_period.total)} ${html(projection.unit)} · Change ${html(projection.delta)} ${html(projection.unit)} · Growth ${projection.growth_percent == null ? '—' : `${html(projection.growth_percent)}%`}</p><div class="table-scroll"><table><thead><tr><th>Month</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table></div><details class="board-chart"><summary>月度趋势图 · Monthly trend</summary><svg role="img" aria-label="Monthly trend" viewBox="0 0 800 190" width="100%" height="190"><line x1="20" y1="${170 - ((0 - min) / span) * 130}" x2="780" y2="${170 - ((0 - min) / span) * 130}" stroke="#9b958a"/><polyline points="${chartPoints}" fill="none" stroke="#647d62" stroke-width="3"/>${points.map((item, index) => `<text x="${20 + index * (760 / Math.max(1, points.length - 1))}" y="${170 - ((item.sum - min) / span) * 130 - 8}" text-anchor="middle">${html(item.sum)}</text>`).join('')}</svg></details>${analysisSourceHtml(projection)}</div>`;
   }
   return '';
 }
 
 function analysisSourceHtml(projection) {
-  return `<p><small>Derived from verified Save ${html(projection.save_id)} · Result Resource ${html(projection.resource_id ?? 'not recorded')} · Source Resources ${html((projection.source_resource_ids ?? []).join(', ') || 'not recorded')} · SHA-256 ${html(projection.result_sha256)} · Board snapshot revision ${html(projection.board_snapshot_revision)}.</small></p>`;
+  return `<details class="board-evidence"><summary>计算来源 · Calculation sources</summary><p><small>Derived from verified Save ${html(projection.save_id)} · Result Resource ${html(projection.resource_id ?? 'not recorded')} · Source Resources ${html((projection.source_resource_ids ?? []).join(', ') || 'not recorded')} · SHA-256 ${html(projection.result_sha256)} · Board snapshot revision ${html(projection.board_snapshot_revision)}.</small></p></details>`;
 }
+
+function portableBlockEvidence(block) {
+  return `<details class="board-evidence"><summary>文件与版本来源 · File evidence</summary><dl><dt>Resource</dt><dd>${html(block.resource_id ?? 'not recorded')}</dd><dt>Save</dt><dd>${html(block.save_id ?? 'not recorded')}</dd><dt>Path</dt><dd>${html(block.recorded_path ?? block.path ?? 'not recorded')}</dd><dt>SHA-256</dt><dd>${html(block.recorded_sha256 ?? 'not recorded')}</dd><dt>Recorded</dt><dd>${html(block.recorded_at ?? block.recorded_modified_at ?? 'not recorded')}</dd><dt>Block</dt><dd>${html(block.block_id)}</dd><dt>Status</dt><dd>${html(block.reason ?? block.status)}</dd></dl></details>`;
+}
+
+const PORTABLE_STYLE = `:root{color-scheme:light}*{box-sizing:border-box}body{font:16px/1.8 "Segoe UI","PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;max-width:920px;margin:48px auto;padding:0 32px;color:#252a31;background:#fff}header{padding-bottom:28px;border-bottom:2px solid #252a31}h1{font-size:2rem;line-height:1.35;margin:12px 0;overflow-wrap:anywhere}h2{font-size:1.4rem;line-height:1.45;margin:0 0 16px}h3,h4,h5,h6{font-size:1.1rem;line-height:1.5}main>section,.delivery-issues{padding:28px 0;border-bottom:1px solid #e1e5e9}p{margin:10px 0}a{color:#28597c;text-underline-offset:3px;overflow-wrap:anywhere}img{display:block;max-width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f7f9;padding:16px;border-radius:6px}code{font-family:Consolas,monospace;font-size:.9em}blockquote{border-left:3px solid #bac8d3;margin:16px 0;padding:0 18px;color:#4d5964}.table-scroll{overflow:auto;margin:18px 0}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}th,td{text-align:left;border-bottom:1px solid #e1e5e9;padding:10px 12px;white-space:nowrap}thead{background:#f5f7f9}details{margin:16px 0;padding:12px 16px;background:#f7f9fa;border-radius:6px}summary{cursor:pointer;font-size:.9rem;font-weight:600;color:#53616d}small,.block-version{color:#53616d;font-size:.85rem}.issue{color:#923f25;background:#fff5ef;border-left:3px solid #b5603a;padding:10px 14px}.board-evidence dl{display:grid;grid-template-columns:90px minmax(0,1fr);gap:8px;font-size:.85rem}.board-evidence dd{margin:0;overflow-wrap:anywhere}.board-evidence dt{color:#53616d}.document-date{display:flex;gap:8px 20px;flex-wrap:wrap}.board-analysis-projection{margin-top:18px}.board-analysis-projection svg{max-width:100%;height:auto}@media(max-width:600px){body{margin:24px auto;padding:0 18px}h1{font-size:1.65rem}main>section{padding:22px 0}th,td{padding:8px}details{padding:10px}}@media print{body{max-width:none;margin:0;padding:0;font-size:11pt}details{break-inside:avoid}.table-scroll{overflow:visible}a{color:inherit}}`;
 
 function analysisProjectionMarkdown(projection) {
   if (!projection?.complete) return '';
@@ -646,7 +654,12 @@ export class BoardService {
     const issues = [];
     const sections = [];
     for (const block of board.blocks) {
-      if (block.type === 'text') { sections.push(`<section class="text"><p>${html(block.text).replaceAll('\n', '<br>')}</p></section>`); continue; }
+      if (block.type === 'text') {
+        // Keep the document title as the only level-one heading.
+        const markdown = renderMarkdown(block.text).replace(/<(\/?)h([1-6])\b/gu, (_, closing, level) => `<${closing}h${Math.min(6, Number(level) + 1)}`);
+        sections.push(`<section class="text" data-block-id="${html(block.block_id)}">${markdown}</section>`);
+        continue;
+      }
       let filePath = block.path;
       let snapshot = null;
       if (block.type === 'result_preview' && block.version_policy === 'pinned_version') {
@@ -660,12 +673,12 @@ export class BoardService {
       const unavailable = !stat?.isFile() || stat.isSymbolicLink() || block.status === 'missing' || !currentMatches;
       if (unavailable) {
         issues.push(`${block.name ?? block.recorded_path ?? block.block_id}: ${block.reason ?? 'The referenced file is unavailable.'}`);
-        sections.push(`<section><h2>${html(block.name ?? 'Reference')}</h2><p class="issue">Not included: ${html(block.reason ?? 'Unavailable')}</p></section>`);
+        sections.push(`<section data-block-id="${html(block.block_id)}"><h2>${html(block.name ?? 'Reference')}</h2><p class="block-version">${html(block.version_policy)} · ${html(block.status_label ?? statusLabel(block.status))}</p><p class="issue">Not included: ${html(block.reason ?? 'Unavailable')}</p>${portableBlockEvidence(block)}</section>`);
         continue;
       }
       if (stat.size > MAX_EMBED_BYTES || embeddedBytes + stat.size > MAX_TOTAL_EMBED_BYTES) {
         issues.push(`${block.name}: file exceeds the portable delivery size limit.`);
-        sections.push(`<section><h2>${html(block.name)}</h2><p class="issue">Not included: file exceeds the portable delivery size limit.</p></section>`);
+        sections.push(`<section data-block-id="${html(block.block_id)}"><h2>${html(block.name)}</h2><p class="block-version">${html(block.version_policy)} · ${html(block.status_label ?? statusLabel(block.status))}</p><p class="issue">Not included: file exceeds the portable delivery size limit.</p>${portableBlockEvidence(block)}</section>`);
         continue;
       }
       embeddedBytes += stat.size;
@@ -680,12 +693,15 @@ export class BoardService {
       inputs.push(...this.#tableWorkAnalysisInputs(board.project_id, block));
       const encoded = dataUri(filePath, block.path ?? block.recorded_path ?? filePath); const name = block.name ?? path.basename(filePath);
       const analysis = analysisProjectionHtml(block.dashboard_projection ?? block.analysis_projection);
-      const preview = analysis || (encoded.mime.startsWith('image/') ? `<img src="${encoded.uri}" alt="${html(name)}">`
+      const contentPreview = analysis || (encoded.mime.startsWith('image/') ? `<img src="${encoded.uri}" alt="${html(name)}">`
         : block.preview?.kind === 'table' ? readableTablePreview(block.preview) : readablePreview(filePath, encoded.mime));
-      sections.push(`<section><h2>${html(name)}</h2><p>${html(block.type === 'result_preview' ? 'Selected Result' : 'Material dependency')} · ${html(block.version_policy)}</p>${preview}<p><a download="${html(name)}" href="${encoded.uri}">Download ${html(name)}</a></p></section>`);
+      const preview = block.type === 'material_reference' && contentPreview ? `<details class="board-material-preview"><summary>查看材料内容 · Material preview</summary>${contentPreview}</details>` : contentPreview;
+      const warning = `${block.reason && block.status !== 'fresh' ? `<p class="issue">${html(block.reason)}</p>` : ''}${block.preview?.kind === 'unavailable' ? `<p class="issue">${html(block.preview.content)}</p>` : ''}${!analysis && (block.preview?.bounded || block.preview?.content?.bounded || encoded.mime.startsWith('text/') && stat.size > MAX_READABLE_PREVIEW_CHARS) ? '<p class="issue">部分内容预览 · Preview bounded; download the attachment for full content.</p>' : ''}`;
+      sections.push(`<section data-block-id="${html(block.block_id)}"><h2>${html(name)}</h2><p class="block-version">${html(block.type === 'result_preview' ? '固定成果 · Selected Result' : '材料引用 · Material dependency')} · ${html(block.version_policy)} · ${html(block.status_label ?? statusLabel(block.status))}</p>${warning}${preview}<p><a download="${html(name)}" href="${encoded.uri}">Download ${html(name)}</a></p>${portableBlockEvidence(block)}</section>`);
     }
     const issueList = issues.length ? `<ul>${issues.map((item) => `<li>${html(item)}</li>`).join('')}</ul>` : '<p>None.</p>';
-    const document = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${html(board.title)}</title><style>body{font:16px/1.55 system-ui,sans-serif;max-width:960px;margin:40px auto;padding:0 24px;color:#24211d}section{border-top:1px solid #c9c1b5;padding:24px 0}img{max-width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f0e8;padding:16px}.table-scroll{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;border-bottom:1px solid #d9d1c5;padding:8px;white-space:nowrap}.issue{color:#8a3324}small{color:#625d55}</style></head><body><header><small>Atlas portable Board · snapshot revision ${board.revision}</small><h1>${html(board.title)}</h1><p>This self-contained document reflects the Board snapshot revision ${board.revision}.</p></header>${sections.join('')}<section><h2>Missing or not included</h2>${issueList}</section></body></html>`;
+    const date = board.updated_at ?? board.created_at;
+    const document = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${html(board.title)}</title><style>${PORTABLE_STYLE}</style></head><body><header><small>离线交付文档 · Atlas portable Board · snapshot revision ${board.revision}</small><h1>${html(board.title)}</h1><p class="document-date"><span>看板版本 · Revision ${board.revision}</span><span>更新时间 · ${date ? `<time datetime="${html(date)}">${html(date)}</time>` : 'not recorded'}</span></p><p>This self-contained document reflects the Board snapshot revision ${board.revision}. 附件已内嵌，可离线阅读与下载。</p><details class="board-evidence"><summary>看板身份 · Board evidence</summary><p>Board ${html(board.board_id)} · Project ${html(board.project_id)} · Created ${html(board.created_at ?? 'not recorded')}</p></details></header><main>${sections.join('')}</main><section class="delivery-issues"><h2>Missing or not included</h2>${issueList}</section></body></html>`;
     return { html: document, inputs: [...new Set(inputs)], issues, embedded_bytes: embeddedBytes };
   }
 

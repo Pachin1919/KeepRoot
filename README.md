@@ -6,6 +6,8 @@ Keeproot keeps files in their existing project folders. People and AI hosts use 
 
 Current version: **2.0.0-preview.1**. This is preview source, not a stable release. Atlas remains the technical name used by the CLI, protocol, Skill and installation directories.
 
+The October 12 development checkpoint retains working features and known regressions. Its baseline ran once: 994 tests passed, 41 failed, and one was skipped. UI integration, navigation return context and Skill checks still need reconciliation. This checkpoint is not an installation release.
+
 ## What you can try
 
 - Browse and read Markdown, text, images, PDF, DOCX and CSV/XLSX in the workspace.
@@ -52,13 +54,13 @@ $env:ATLAS_TEST_PYTHON = $env:ATLAS_CONTENT_PYTHON
 npm test
 ```
 
-The retained Git history starts on **2026-07-20**. Internal development documents and machine-specific records were removed from every published revision. Original commit dates, branch relationships and version tags are retained; hashes changed during this cleanup. Older branches represent earlier implementations, not the current supported preview.
+The retained Git history starts on **2026-07-20**. Internal development documents and machine-specific records were removed from every published revision. Original commit dates and branch relationships are retained; hashes changed during this cleanup. Obsolete preview tags were removed. Older branches represent earlier implementations, not the current supported preview.
 
 This repository is public source. A project-wide open-source license has not been selected; bundled third-party code retains its own licenses. Public source visibility does not grant a new license for original code or artwork. Keeproot name rights have not been cleared.
 
 ### Publishing changes
 
-Known test limitation: the legacy navigation-layout regression still needs its resizer check scoped to the current DOM. The regression gate is not fully green. This does not change the preview's pending native, second-host and real-project validation.
+Known test limitations: the October 12 baseline has 41 failed checks across UI structure, return context and Skill contracts. Earlier isolated workflow evidence does not replace this regression gate. Native, second-host and real-project validation remain pending.
 
 Use a sanitized checkout for public updates. Do not merge private development history into this repository. Before committing, run `python scripts/check-public-source.py --worktree`; before pushing, run it without that flag. Enable the included local check with `git config --local core.hooksPath .githooks`. The hook uses Python from PATH or `ATLAS_PUBLIC_CHECK_PYTHON`. CI also checks all reachable history. The checks help detect excluded paths and common sensitive patterns; review public content before upload.
 

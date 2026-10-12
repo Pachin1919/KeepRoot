@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import os from 'node:os';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -69,6 +70,13 @@ function main() {
   let result;
   if (command === 'install' || command === 'upgrade') {
     result = installRuntime({ ...options, sourceRoot, operation: command });
+    // Only the default Windows user installation updates the Start Menu.
+    if (process.platform === 'win32' && path.resolve(options.installRoot).toLowerCase() === path.resolve(defaultInstallRoot()).toLowerCase() && ['installed','upgraded','already_installed'].includes(result.status)) {
+      const target = path.join(process.env.SystemRoot || 'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
+      const updated = spawnSync(target,['-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',path.join(sourceRoot,'scripts','update-ui-shortcut.ps1'),'-InstallRoot',options.installRoot],{encoding:'utf8',windowsHide:true,timeout:30_000});
+      if(updated.error || updated.status !== 0) result.ui_shortcut = {status:'failed',message:updated.error?.message || updated.stderr.trim()};
+      else { try { result.ui_shortcut=JSON.parse(updated.stdout); } catch { result.ui_shortcut={status:'failed',message:'Shortcut update returned no readable receipt.'}; } }
+    }
   } else if (command === 'locate') {
     result = handshakeRuntime({ installRoot: options.installRoot });
   } else if (command === 'uninstall') {

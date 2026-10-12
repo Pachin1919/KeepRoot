@@ -660,10 +660,14 @@ if (activityRegion) {
       ? [...focusedActivity.querySelectorAll('summary, a, button, input, select, textarea, [tabindex]')]
       : [];
     const focusedControlIndex = focusableControls.indexOf(focusedControl);
+    const connectionText = activityRegion.querySelector('.activity-manager-connection')?.textContent;
     activityRegion.innerHTML = next.innerHTML;
+    const nextConnection = activityRegion.querySelector('.activity-manager-connection');
+    if (nextConnection && connectionText) nextConnection.textContent = connectionText;
     activityRegion.querySelectorAll('[data-activity-key]').forEach((item) => {
       item.open = expanded.has(item.dataset.activityKey);
     });
+    activityRegion.dispatchEvent(new CustomEvent('atlas:activity-refreshed', { bubbles: true }));
     if (focusedActivityKey) {
       const nextFocusedActivity = [...activityRegion.querySelectorAll('[data-activity-key]')]
         .find((item) => item.dataset.activityKey === focusedActivityKey);
@@ -1236,6 +1240,7 @@ settingsForm?.addEventListener('change', (event) => {
 document.addEventListener('submit', (event) => {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
+  if (form.closest('[data-resource-reader]')?.dataset.readerInlineReady === 'true' && form.matches('form[action*="/resources/edit/"]')) return;
   if (form.dataset.atlasSubmitting === 'true') {
     event.preventDefault();
     return;
@@ -1254,8 +1259,206 @@ document.addEventListener('submit', (event) => {
 const workDraftConflict = document.querySelector('#work-draft-conflict');
 workDraftConflict?.focus?.();
 
+// Keep simple text editing on the current Reader; the existing forms remain a no-JS fallback.
+function bindReaderInlineEditor(surface) {
+  const content = surface.querySelector('#reader-content');
+  const status = surface.querySelector('[data-reader-edit-status]');
+  if (!content || !status) return;
+  surface.dataset.readerInlineReady = 'true';
+  const base = window.location.pathname?.split('/resources/')[0] ?? new URL(window.location.href).pathname.split('/resources/')[0];
+  let busy = false;
+  let editorDraft = null;
+  let inputRevision = 0;
+  let editorGeneration = 0;
+  const graph = surface.querySelector('#reader-graph');
+  const graphToggle = surface.querySelector('[data-reader-graph-toggle]');
+  const setGraph = visible => {
+    if (!graph || !graphToggle) return;
+    if (visible && (busy || content.querySelector('.reader-edit') || dirtyDraftForms.has(content) || [...dirtyDraftForms].some(form => content.contains(form)))) {
+      status.textContent = surface.dataset.readerEditDiscard;
+      status.hidden = false;
+      return;
+    }
+    content.hidden = visible; graph.hidden = !visible;
+    surface.classList.toggle('reader-graph-open', visible);
+    graphToggle.setAttribute('aria-pressed', String(visible));
+    graphToggle.textContent = visible ? graphToggle.dataset.readLabel : graphToggle.dataset.graphLabel;
+    const url = new URL(window.location.href); if(visible) url.searchParams.set('graph','1'); else url.searchParams.delete('graph');
+    window.history.replaceState(window.history.state,'',url.pathname+url.search);
+    if(visible) graph.querySelector('[data-resource-focus-graph]')?.dispatchEvent(new Event('graph-visible'));
+  };
+  graphToggle?.addEventListener('click', () => setGraph(graph.hidden));
+  if(graph && !graph.hidden) surface.classList.add('reader-graph-open');
+  const clearDraft = () => {
+    dirtyDraftForms.delete(content);
+    for (const form of content.querySelectorAll('[data-draft-protect]')) dirtyDraftForms.delete(form);
+  };
+  const editControl = surface.querySelector('.reader-toolbar-actions [data-reader-inline-edit]');
+  const updateEditControl = () => {
+    if (!editControl?.dataset) return;
+    const editing = Boolean(content.querySelector('.reader-text-editor'));
+    editControl.textContent = editing ? editControl.dataset.readerReadLabel : editControl.dataset.readerEditLabel;
+    editControl.setAttribute('aria-current', editing ? 'true' : 'false');
+  };
+  const request = async (href, options = {}, automatic = false) => {
+    if (busy) return;
+    const url = new URL(href, window.location.href);
+    if (url.origin !== window.location.origin || ![base + '/resources/read', base + '/resources/edit', ...['preview','confirm','undo','recover'].map(action => base + '/resources/edit/' + action)].includes(url.pathname)) return;
+    if (!options.method && url.searchParams.get('resource_id') !== surface.dataset.readerResourceId) return;
+    busy = true;
+    const requestedRevision = inputRevision;
+    const requestedGeneration = editorGeneration;
+    content.setAttribute('aria-busy', 'true');
+    status.hidden = true;
+    try {
+      const response = await fetch(url, { ...options, credentials: 'same-origin', signal: AbortSignal.timeout(30000) });
+      const parsed = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const incoming = parsed.querySelector('[data-resource-reader]');
+      const replacement = incoming?.querySelector('#reader-content');
+      // A conflict page is useful and preserves the submitted draft; unrelated error pages are not.
+      if (!replacement || incoming.dataset.readerResourceId !== surface.dataset.readerResourceId || (!response.ok && response.status !== 409)) throw Error('Reader response unavailable');
+      const returned = new URL(response.url);
+      if (!replacement.querySelector('.reader-edit') && (returned.origin !== window.location.origin || returned.pathname !== base + '/resources/read' || returned.searchParams.get('resource_id') !== surface.dataset.readerResourceId)) throw Error('Invalid Reader result address');
+      if (requestedRevision !== inputRevision || requestedGeneration !== editorGeneration) throw Error('Draft changed during request');
+      window.AtlasReaderEditor?.destroy(content);
+      editorGeneration++;
+      clearDraft();
+      content.replaceChildren(...replacement.childNodes);
+      window.AtlasReaderEditor?.mount(content);
+      if (content.querySelector('.reader-edit')) {
+        if (options.method) dirtyDraftForms.add(content);
+      } else {
+        editorDraft = null;
+        window.history.replaceState(window.history.state, '', returned.pathname + returned.search + returned.hash);
+        const settings = document.querySelector('[data-settings-nav]');
+        const updatedSettings = parsed.querySelector('[data-settings-nav]');
+        if (settings && updatedSettings) {
+          const settingsUrl = new URL(updatedSettings.getAttribute('href'), window.location.href);
+          if (settingsUrl.origin === window.location.origin && settingsUrl.pathname === '/settings') {
+            settingsUrl.searchParams.set('return_to', returned.pathname + returned.search + returned.hash);
+            settings.setAttribute('href', settingsUrl.pathname + settingsUrl.search);
+          }
+        }
+        const actions = surface.querySelector('.reader-task-actions');
+        const updatedActions = incoming.querySelector('.reader-task-actions');
+        if (actions && updatedActions) actions.innerHTML = updatedActions.innerHTML;
+        const editAction = surface.querySelector('.reader-toolbar-actions [data-reader-inline-edit]');
+        const updatedEditAction = incoming.querySelector('.reader-toolbar-actions [data-reader-inline-edit]');
+        if (editAction && updatedEditAction) {
+          editAction.setAttribute('href', updatedEditAction.getAttribute('href'));
+          if (editAction.dataset && updatedEditAction.dataset) editAction.dataset.readerReadHref = updatedEditAction.dataset.readerReadHref;
+        }
+        const incomingGraph = incoming.querySelector('#reader-graph');
+        if (graph && incomingGraph) {
+          graph.querySelector('[data-resource-focus-graph]')?.dispatchEvent(new Event('graph-destroy'));
+          graph.replaceChildren(...incomingGraph.childNodes);
+          const graphHost = graph.querySelector('[data-resource-focus-graph]');
+          if (graphHost) window.AtlasResourceGraph?.mount(graphHost);
+        }
+      }
+      updateEditControl();
+      const editor = content.querySelector('textarea');
+      if (!automatic) {
+        if (window.AtlasReaderEditor && editor) window.AtlasReaderEditor.focus(content);
+        else if (editor) editor.focus({ preventScroll: true });
+        else content.focus({ preventScroll: true });
+      }
+    } catch {
+      // Preserve fields and request keys: a timed-out write may already have completed.
+      status.textContent = surface.dataset.readerEditError;
+      status.hidden = false;
+    } finally {
+      busy = false;
+      content.removeAttribute('aria-busy');
+    }
+  };
+  surface.addEventListener('input', event => {
+    if (event.target.matches?.('.reader-text-editor')) { inputRevision++; dirtyDraftForms.add(content); }
+  });
+  const readRendered = async href => {
+    if (dirtyDraftForms.has(content) || [...dirtyDraftForms].some(form => content.contains(form))) {
+      status.textContent = surface.dataset.readerEditDiscard;
+      status.hidden = false;
+      const discard = document.createElement('button');
+      discard.type = 'button'; discard.className = 'reader-button';
+      discard.textContent = surface.dataset.readerEditDiscardAction;
+      discard.addEventListener('click', () => request(href));
+      const keep = document.createElement('button');
+      keep.type = 'button'; keep.className = 'reader-button';
+      keep.textContent = surface.dataset.readerEditKeep;
+      keep.addEventListener('click', () => { status.hidden = true; content.querySelector('textarea')?.focus(); });
+      status.append(' ', keep, ' ', discard);
+      return;
+    }
+    await request(href);
+  };
+  surface.addEventListener('click', async event => {
+    const link = event.target.closest?.('a');
+    if (!link || event.button > 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (link.matches('[data-reader-inline-edit]')) {
+      event.preventDefault();
+      if (busy) return;
+      setGraph(false);
+      const editable = content.querySelector('.reader-text-editor');
+      if (editable && !editable.readOnly && !editable.disabled) {
+        if (link === editControl && editControl.dataset?.readerReadHref) {
+          await readRendered(editControl.dataset.readerReadHref);
+          return;
+        }
+        if (window.AtlasReaderEditor) window.AtlasReaderEditor.focus(content);
+        else editable.focus({ preventScroll: true });
+        return;
+      }
+      if (editorDraft && content.querySelector('.reader-edit')) {
+        window.AtlasReaderEditor?.destroy(content);
+        editorGeneration++;
+        content.innerHTML = editorDraft.html;
+        const editor = content.querySelector('textarea');
+        editor.value = editorDraft.text;
+        editor.dataset.readerSource = JSON.stringify(editorDraft.text);
+        content.querySelector('[name="request_key"]').value = 'manual-preview:' + crypto.randomUUID();
+        dirtyDraftForms.add(content);
+        window.AtlasReaderEditor?.mount(content);
+        updateEditControl();
+        if (window.AtlasReaderEditor) window.AtlasReaderEditor.focus(content);
+        else editor.focus({ preventScroll: true });
+        return;
+      }
+      await request(link.href);
+    } else if (content.contains(link) && content.querySelector('.reader-edit')) {
+      const url = new URL(link.href, window.location.href);
+      if (url.pathname !== base + '/resources/read') return;
+      event.preventDefault();
+      if (busy) return;
+      await readRendered(link.href);
+    }
+  });
+  surface.addEventListener('submit', async event => {
+    const form = event.target;
+    if (!content.contains(form) || !form.matches('form[action*="/resources/edit/"]')) return;
+    event.preventDefault();
+    if (busy) return;
+    const body = new URLSearchParams(new FormData(form));
+    const editorText = window.AtlasReaderEditor?.text(form);
+    if (typeof editorText === 'string' && form.querySelector('.reader-text-editor')) body.set('text',editorText);
+    if (body.get('resource_id') !== surface.dataset.readerResourceId) return;
+    if (form.querySelector('.reader-text-editor')) {
+      const snapshot = content.cloneNode(true);
+      for (const host of snapshot.querySelectorAll('[data-reader-editor]')) host.replaceChildren();
+      editorDraft = { html: snapshot.innerHTML, text: editorText ?? form.querySelector('textarea').value };
+    }
+    await request(form.action, { method: 'POST', body });
+  });
+  // Only the initial normal opening opts in. Readback never re-enters editing.
+  if (surface.dataset.readerDefaultEdit === 'true' && editControl && !content.querySelector('.reader-edit') && !(graph && !graph.hidden)) {
+    surface.dataset.readerDefaultEdit = 'false';
+    return request(editControl.href, {}, true);
+  }
+}
+
 const readerSurface = document.querySelector('[data-resource-reader]');
 if (readerSurface) {
+  bindReaderInlineEditor(readerSurface);
   const files = readerSurface.querySelector('#reader-files');
   const source = readerSurface.querySelector('#reader-source');
   const content = readerSurface.querySelector('#reader-content');
@@ -1392,3 +1595,22 @@ if (hostSessionSurface) {
   window.addEventListener('pagehide', () => { hostPollingClosed = true; }, { once: true });
   window.setTimeout(pollHostSession, 1000);
 }
+
+// A canvas visit to a Work/Result retains an explicit return, without changing service URLs.
+try {
+  const visit = JSON.parse(sessionStorage.getItem('atlas-graph-return'));
+  if (visit && typeof visit.project === 'string' && typeof visit.origin === 'string' && typeof visit.target === 'string') {
+    const base = '/projects/' + encodeURIComponent(visit.project);
+    const origin = new URL(visit.origin, window.location.origin), target = new URL(visit.target, window.location.origin);
+    const current = new URL(window.location.href);
+    if (origin.origin === window.location.origin && target.origin === window.location.origin
+      && visit.origin.startsWith('/') && !/[\\\s]/u.test(visit.origin) && origin.searchParams.get('graph') === '1'
+      && [base+'/resources',base+'/resources/read'].includes(origin.pathname)
+      && target.pathname === current.pathname && target.search === current.search
+      && (/^\/work\/[^/]+(?:\/saved)?$/u.test(target.pathname) || target.pathname === base+'/resources/read')) {
+      const link=document.createElement('a'); link.className='reader-button graph-return'; link.href=origin.pathname+origin.search;
+      link.textContent=document.documentElement.lang.startsWith('zh') ? '返回关系画布' : 'Back to relationship canvas';
+      (document.querySelector('.reader-toolbar') ?? document.querySelector('main'))?.prepend(link);
+    }
+  }
+} catch {}

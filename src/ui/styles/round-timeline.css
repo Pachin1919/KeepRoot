@@ -29,6 +29,9 @@
 .round-timeline-back-links { display: flex; flex-wrap: wrap; gap: 14px; margin: 0; }
 .round-timeline-empty { display: grid; gap: 8px; }
 .round-timeline-empty h2, .round-timeline-empty p { margin: 0; }
+.archive-timeline > .round-timeline-row, .archive-timeline > .round-timeline-node { border-left: 3px solid var(--accent-line); position: relative; }
+.archive-timeline > .round-timeline-row:hover { border-left-color: var(--accent-strong); }
+.archive-timeline > h2 { font-size: var(--font-size-section); margin: 8px 0; }
 @media (max-width: 620px) {
   .round-timeline-row, .round-timeline-node-heading { align-items: start; flex-direction: column; }
   .round-timeline-row-meta { justify-items: start; text-align: left; }

@@ -105,7 +105,7 @@ test('Host and Resources render the same bounded Resource to Work to Result focu
   assert.equal(resultNode.freshness?.status, 'fresh');
   assert.equal(sourceWorkEdge.impact?.status, 'fresh');
 
-  const pageUrl = new URL(`/projects/${encodeURIComponent(project.project_id)}/resources?resource_id=${encodeURIComponent(source.resource_id)}&relation_depth=2&relation_status=active`, server.workspace_url);
+  const pageUrl = new URL(`/projects/${encodeURIComponent(project.project_id)}/resources?resource_id=${encodeURIComponent(source.resource_id)}&relation_depth=2&relation_status=active&graph=1`, server.workspace_url);
   const pageResponse = await fetch(pageUrl); assert.equal(pageResponse.status, 200);
   const html = await pageResponse.text();
   assert.match(html, /data-resource-focus-graph/u);
@@ -113,8 +113,16 @@ test('Host and Resources render the same bounded Resource to Work to Result focu
   assert.ok(html.includes(relationship.id));
   assert.match(html, new RegExp(saved.save_id, 'u'));
   assert.match(html, new RegExp(`/work/${work.session_id}`, 'u'));
-  assert.match(html, new RegExp(`data-focus-graph-node="result:${saved.save_id}"[^<]*>[^<]*<a[^>]*>[^<]*</a> · Fresh`, 'u'));
-  assert.match(html, new RegExp(`data-focus-graph-edge="${sourceWorkEdge.id}"[^>]*>[^<]*Fresh</li>`, 'u'));
+  const graphData = text => JSON.parse(text.match(/data-graph-data="([^"]+)"/u)[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&#39;', "'"));
+  assert.equal(graphData(html).nodes.find(node=>node.id===`result:${saved.save_id}`).freshness.label,'Fresh');
+  assert.equal(graphData(html).edges.find(edge=>edge.id===sourceWorkEdge.id).impact.label,'Fresh');
+  assert.match(html,/class="workspace-graph-page"/u);
+  assert.doesNotMatch(html,/class="workspace-focus"/u);
+  const readerHtml = await (await fetch(new URL(`/projects/${project.project_id}/resources/read?resource_id=${source.resource_id}&graph=1&relation_depth=2`,server.workspace_url))).text();
+  assert.match(readerHtml,/data-reader-graph-toggle/u);
+  assert.deepEqual(graphData(readerHtml).nodes.map(node=>node.id),host.nodes.map(node=>node.id));
+  assert.deepEqual(graphData(readerHtml).edges.map(edge=>edge.id),host.edges.map(edge=>edge.id));
+  const asset = await fetch(new URL('/ui/resource-graph.js',server.workspace_url)); assert.equal(asset.status,200); assert.match(await asset.text(),/mountResourceGraph/u);
   assert.equal(saveService.show(saved.save_id).status, 'executed');
   assert.equal(fs.readFileSync(sourcePath, 'utf8'), 'district,amount\nNorth,10\nSouth,5\n');
   fs.writeFileSync(sourcePath, 'district,amount\nNorth,11\nSouth,5\n', 'utf8');
@@ -124,5 +132,5 @@ test('Host and Resources render the same bounded Resource to Work to Result focu
   const changedGraph = JSON.parse(changedCli.stdout).data.resource_focus_graph;
   assert.equal(changedGraph.edges.find((edge) => edge.derived_kind === 'source_to_work')?.impact?.status, 'needs_review');
   const changedHtml = await (await fetch(pageUrl)).text();
-  assert.match(changedHtml, new RegExp(`data-focus-graph-edge="${sourceWorkEdge.id}"[^>]*>[^<]*Needs review</li>`, 'u'));
+  assert.equal(graphData(changedHtml).edges.find(edge=>edge.id===sourceWorkEdge.id).impact.label,'Needs review');
 });

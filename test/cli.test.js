@@ -525,6 +525,7 @@ test('Agent JSON protocol exposes version, capabilities, doctor, and structured 
     assert.ok(envelope.data);
     if (expected === 'capabilities') {
       assert.deepEqual(envelope.data.product_entrypoints.current_product.commands, [
+        'capture source prepare-markdown',
         'handoff create', 'handoff list', 'handoff show', 'handoff read',
         'module list', 'module package-preview', 'module package-list', 'module install', 'module preview', 'module save', 'module enable', 'module disable',
         'project move prepare', 'project move show', 'project move execute', 'project move undo', 'project move recover',
@@ -548,7 +549,7 @@ test('Agent JSON protocol exposes version, capabilities, doctor, and structured 
       assert.equal(Object.hasOwn(envelope.data.workflows, 'analytics'), false);
       assert.equal(Object.hasOwn(envelope.data.workflows, 'agent'), false);
       assert.deepEqual(envelope.data.workflows.resource_views, ['list', 'evaluate', 'files', 'candidates-submit', 'candidates-show', 'row-candidates-submit', 'row-candidates-show', 'properties', 'save']);
-      assert.deepEqual(envelope.data.workflows.capture, ['fetch', 'localize', 'sample', 'source-prepare', 'source-inspect-export', 'source-prepare-export', 'source-show', 'source-read']);
+      assert.deepEqual(envelope.data.workflows.capture, ['fetch', 'localize', 'sample', 'source-prepare', 'source-prepare-markdown', 'source-inspect-export', 'source-prepare-export', 'source-show', 'source-read']);
       assert.deepEqual(envelope.data.workflows.resource_facts, ['show']);
       assert.deepEqual(envelope.data.resource_views, {
         modes: ['files', 'table', 'cards'],

@@ -33,6 +33,8 @@ Read only the matching reference:
 
 Never fall back to internal foundation commands. Old database rows grant no authority; report unsupported behavior.
 
+For URL/shared-conversation capture, use installed Keeproot first. On failure, report only `failed` and the returned reason. Ordinary tasks may use an authorized Host fallback, credited to that Host and then saved through Keeproot. Development/acceptance tests stop the affected chain; no Host/browser replacement counts as a pass.
+
 Saved Views are read-only and dynamic; partial/unknown is not complete or unchanged. Submit at most 10 evidence-backed property candidates for one explicit View or Resource set. Preview values require user accept/edit/reject in UI.
 
 For structured content, inspect locally first: spreadsheet structure, PDF page kind and Office objects; do not ask the model to count rows or rediscover facts.
