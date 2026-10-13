@@ -413,8 +413,11 @@ test('workbench typography uses shared control metrics and collapses inactive hi
   assert.match(css, /\.data-work-page \[data-project-folder-form\] \{[^}]*display: grid;[^}]*gap: 16px/u);
   assert.match(css, /\.data-work-page \[data-project-folders\]\[hidden\] \{ display: none; \}/u);
   assert.match(css, /\.project-home-secondary-target > span:first-child \{ display: grid; gap: 4px/u);
-  assert.match(css, /\.topbar-project-link strong \{[^}]*overflow-wrap: anywhere;[^}]*white-space: normal/u);
+  assert.match(css, /\.topbar-project-link strong \{[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap/u);
   assert.match(css, /\.topbar-project-link \{[^}]*min-width: 0/u);
+  const longName = 'Long Project '.repeat(20);
+  const page = renderDataWorkView({mode:'unavailable',project:{id:'long-project',name:longName}});
+  assert.ok(page.includes(`title="${longName}"`), 'full Project name remains discoverable');
 });
 
 test('V18-04 client draft guard tracks protected forms and beforeunload only while dirty', () => {
@@ -815,7 +818,7 @@ test('V19-04 UI creates a Board, adds three Block types by revision, and routes 
   const candidate = write(path.join(f.root, 'board-ui-candidate.csv'), 'name\nresult\n'); const preparedSave = save.prepare({ root: path.join(f.root, 'workspace'), candidateFile: candidate, projectId: f.project.id, target: 'Project One/Results/board-ui-result.csv', inputs: [sourcePath], origin: 'agent_generated', kind: 'intermediate', channel: 'host', requestKey: 'v19-04-ui-result', caller: { actor: 'agent', tool: 'test', client_run_id: 'v19-04-ui-result' }, source: { path: sourcePath, resource_id: f.first.resource_id, sources: [{ path: sourcePath, resource_id: f.first.resource_id }] }, parameters: {}, resultSummary: { rows: 1, columns: 1 }, intent: 'Create Board UI fixture.' }); const result = save.execute(preparedSave.save_id, { reason: 'Board UI fixture.' });
   const server = await startAtlasUiServer({ stateDir: f.stateDir, registry: f.registry, resourceControl: f.control, intake, projectRoot: f.root, installationRoot: f.root, rules: {}, runtime: {} }); t.after(async () => { await server.close(); }); const base = `${server.workspace_url}projects/${f.project.id}`; let page = await (await fetch(`${base}/boards`)).text(); let csrf = page.match(/name="csrf" value="([a-f0-9]+)"/u)?.[1]; assert.ok(csrf, page.slice(0, 500)); const created = await fetch(`${base}/boards/create`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, title: 'UI Board' }), redirect: 'manual' }); assert.equal(created.status, 303, await created.text()); const boardUrl = new URL(created.headers.get('location'), server.workspace_url).toString();
   const postBlock = async (values) => { page = await (await fetch(boardUrl)).text(); csrf = page.match(/name="csrf" value="([a-f0-9]+)"/u)?.[1]; const revision = page.match(/name="base_revision" value="(\d+)"/u)?.[1]; const response = await fetch(`${boardUrl}/blocks/add`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, base_revision: revision, ...values }), redirect: 'manual' }); assert.equal(response.status, 303); };
-  await postBlock({ block_type: 'text', text: 'UI text block' }); await postBlock({ block_type: 'material_reference', resource_id: f.first.resource_id, version_policy: 'follow_latest' }); await postBlock({ block_type: 'result_preview', save_id: result.save_id, version_policy: 'pinned_version' }); page = await (await fetch(boardUrl)).text(); assert.match(page, /UI text block/u); assert.match(page, /Material Reference|first\.csv/u); assert.match(page, /Result Preview|board-ui-result\.csv/u); assert.match(page, /BOARD \/ REVISION 4/iu);
+  await postBlock({ block_type: 'text', text: 'UI text block' }); await postBlock({ block_type: 'material_reference', resource_id: f.first.resource_id, version_policy: 'follow_latest' }); await postBlock({ block_type: 'result_preview', save_id: result.save_id, version_policy: 'pinned_version' }); page = await (await fetch(boardUrl)).text(); assert.match(page, /UI text block/u); assert.match(page, /Material Reference|first\.csv/u); assert.match(page, /Result Preview|board-ui-result\.csv/u); assert.match(page, /board-document-state[^>]*>[^<]*Revision 4/iu);
   csrf = page.match(/name="csrf" value="([a-f0-9]+)"/u)?.[1]; const revision = page.match(/name="base_revision" value="(\d+)"/u)?.[1]; const exported = await fetch(`${boardUrl}/export`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, base_revision: revision, folder: 'Results', file_name: 'ui-board.html' }), redirect: 'manual' }); assert.equal(exported.status, 303); assert.match(exported.headers.get('location'), /^\/saves\/SAV-/u);
 });
 
@@ -828,11 +831,11 @@ test('V19-04 Board UI serves image Block content, edits and moves by one revisio
   const created = await fetch(`${base}/boards/create`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, title: 'UI Readable Board' }), redirect: 'manual' }); assert.equal(created.status, 303); const boardUrl = new URL(created.headers.get('location'), server.workspace_url).toString();
   const postBlock = async (values) => { page = await (await fetch(boardUrl)).text(); csrf = page.match(/name="csrf" value="([a-f0-9]+)"/u)?.[1]; const revision = page.match(/name="base_revision" value="(\d+)"/u)?.[1]; const response = await fetch(`${boardUrl}/blocks/add`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, base_revision: revision, ...values }), redirect: 'manual' }); assert.equal(response.status, 303); };
   await postBlock({ block_type: 'text', text: 'UI text block' }); await postBlock({ block_type: 'material_reference', resource_id: f.first.resource_id, version_policy: 'follow_latest' }); await postBlock({ block_type: 'result_preview', save_id: result.save_id, version_policy: 'pinned_version' }); await postBlock({ block_type: 'material_reference', resource_id: image.resource_id, version_policy: 'pinned_version' });
-  page = await (await fetch(boardUrl)).text(); assert.match(page, /UI text block/u); assert.match(page, /<table[\s>][\s\S]*name[\s\S]*result/u); assert.match(page, /Edit text/u); assert.match(page, /Move up/u); assert.match(page, /Move down/u); assert.match(page, /BOARD \/ REVISION 5/iu);
+  page = await (await fetch(boardUrl)).text(); assert.match(page, /UI text block/u); assert.match(page, /<table[\s>][\s\S]*name[\s\S]*result/u); assert.match(page, /Edit text/u); assert.match(page, /Move up/u); assert.match(page, /Move down/u); assert.match(page, /board-document-state[^>]*>[^<]*Revision 5/iu);
   const blockIds = [...new Set([...page.matchAll(/name="block_id" value="([^"]+)"/gu)].map((match) => match[1]))]; assert.equal(blockIds.length, 4); const textBlockId = blockIds[0];
-  csrf = page.match(/name="csrf" value="([a-f0-9]+)"/u)?.[1]; let revision = Number(page.match(/BOARD \/ REVISION (\d+)/iu)?.[1]);
-  const edited = await fetch(`${boardUrl}/blocks/update`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, base_revision: String(revision), block_id: textBlockId, action: 'edit-text', text: 'Edited UI text' }), redirect: 'manual' }); assert.equal(edited.status, 303); page = await (await fetch(boardUrl)).text(); assert.match(page, /Edited UI text/u); assert.match(page, new RegExp(`BOARD \/ REVISION ${revision + 1}`, 'iu')); revision += 1;
-  csrf = page.match(/name="csrf" value="([a-f0-9]+)"/u)?.[1]; const moved = await fetch(`${boardUrl}/blocks/update`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, base_revision: String(revision), block_id: textBlockId, action: 'move-down' }), redirect: 'manual' }); assert.equal(moved.status, 303); page = await (await fetch(boardUrl)).text(); assert.match(page, new RegExp(`BOARD \/ REVISION ${revision + 1}`, 'iu')); assert.match(page, new RegExp(`name="block_id" value="${textBlockId}"`, 'u'));
+  csrf = page.match(/name="csrf" value="([a-f0-9]+)"/u)?.[1]; let revision = Number(page.match(/name="base_revision" value="(\d+)"/u)?.[1]);
+  const edited = await fetch(`${boardUrl}/blocks/update`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, base_revision: String(revision), block_id: textBlockId, action: 'edit-text', text: 'Edited UI text' }), redirect: 'manual' }); assert.equal(edited.status, 303); page = await (await fetch(boardUrl)).text(); assert.match(page, /Edited UI text/u); assert.match(page, new RegExp(`board-document-state[^>]*>[^<]*Revision ${revision + 1}`, 'iu')); revision += 1;
+  csrf = page.match(/name="csrf" value="([a-f0-9]+)"/u)?.[1]; const moved = await fetch(`${boardUrl}/blocks/update`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, base_revision: String(revision), block_id: textBlockId, action: 'move-down' }), redirect: 'manual' }); assert.equal(moved.status, 303); page = await (await fetch(boardUrl)).text(); assert.match(page, new RegExp(`board-document-state[^>]*>[^<]*Revision ${revision + 1}`, 'iu')); assert.match(page, new RegExp(`name="block_id" value="${textBlockId}"`, 'u'));
   const imageBlockId = page.match(/<img src="\/projects\/[^/]+\/boards\/[^/]+\/blocks\/([^/]+)\/content"/u)?.[1]; assert.ok(imageBlockId, page.match(/<img[^>]+/u)?.[0]); const content = await fetch(`${boardUrl}/blocks/${imageBlockId}/content`); assert.equal(content.status, 200); assert.match(content.headers.get('content-type') ?? '', /^image\/png/u); assert.deepEqual(Buffer.from(await content.arrayBuffer()), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3])); const badContent = await fetch(`${boardUrl}/blocks/not-a-real-block/content`); assert.notEqual(badContent.status, 200); assert.doesNotMatch(badContent.headers.get('content-type') ?? '', /^image\/png/u);
   const resourceHtml = await (await fetch(`${base}/resources?resource_id=${image.resource_id}`)).text(); assert.match(resourceHtml, /Referenced by Boards/u); assert.match(resourceHtml, /UI Readable Board/u); assert.match(resourceHtml, /Add this Resource to a Board/u);
 });
@@ -1962,7 +1965,7 @@ test('Activity live refresh restores keyboard focus within the same activity ite
 test('Resources layout collapses before the tested narrow desktop width', () => {
   const html = renderProjectResourcesView({
     mode: 'explorer', project: { id: 'project-1', name: 'Project One' }, base: '/projects/project-1',
-    tree: { folders: [], files: [] }, focused_resource: null, missing_sources: [],
+    tree: { folders: [], files: [] }, focused_resource: {resource_id:'RES-layout',name:'Layout.csv',relative_path:'Layout.csv',type:'CSV'}, missing_sources: [],
   }, { csrfToken: 'token' });
   const styles = fs.readFileSync(path.resolve('src', 'ui', 'styles', 'components.css'), 'utf8');
   const client = fs.readFileSync(path.resolve('src', 'ui', 'client.js'), 'utf8');
@@ -2028,7 +2031,7 @@ test('Resource ID focus preserves the local file type, Project-relative location
   assert.equal(model.focused_resource.relative_path, 'test/.tmp/v17-data-source.csv');
   assert.match(html, /<dt>Stored in<\/dt><dd>test\/.tmp<\/dd>/u);
   assert.match(html, /Work with data/u);
-  assert.match(html, /href="\/projects\/project-1\/resources\?path=test%2F\.tmp%2Fv17-data-source\.csv&amp;resource_id=RES-data-source"/u);
+  assert.match(html, /href="\/projects\/project-1\/resources\/read\?resource_id=RES-data-source&amp;return_to=/u);
   assert.ok(html.indexOf('Work with data') < html.indexOf('<dl>'));
 });
 
@@ -2151,7 +2154,7 @@ test('Resources renders the approved three-pane workspace and remembers the coll
   assert.match(styles, /\.workspace-resource-grid\.is-file-list-collapsed/u);
   assert.match(styles, /grid-template-columns:\s*minmax\([^;]+\)\s+minmax\([^;]+\)/u);
   assert.match(styles, /\.workspace-resource-list\[hidden\], \.workspace-folder-files\[hidden\] \{ display: none !important; \}/u);
-  assert.match(styles, /@container \(max-width: 800px\)[\s\S]*?\.workspace-resource-grid:not\(\.is-file-list-collapsed\) \.workspace-focus \{ display: none; \}/u);
+  assert.match(styles, /@container \(max-width: 800px\)[\s\S]*?\.workspace-resource-grid:not\(\.is-file-list-collapsed\):not\(\.workspace-resource-grid-list\) \.workspace-focus \{ display: none; \}/u);
 });
 
 test('Resources exposes direct folder disclosure, adjustable panes, and native zoom reflow', () => {
@@ -2992,9 +2995,10 @@ test('Global Search reports bounded no-results and unavailable Project states', 
 test('Atlas navigation uses product surfaces, aligned SVG icons, and supplied Pachin identity assets', () => {
   const html = renderBatchWorkView({ mode: 'empty-selection' }, { csrfToken: 'csrf', settingsHref: '/settings' });
   const nav = html.slice(html.indexOf('<aside'), html.indexOf('</aside>') + 8);
-  for (const text of ['data-toggle-rail', 'aria-valuemin="68"', 'class="nav-icon"', 'stroke-linecap="round"', '/ui/pachin-seal.png', '/ui/pachin-calligraphy.png', '<strong>Pachin Studio</strong>', 'aria-label="Keeproot"']) {
+  for (const text of ['data-toggle-rail', 'class="nav-icon"', 'stroke-linecap="round"', '/ui/pachin-seal.png', '/ui/pachin-calligraphy.png', '<strong>Pachin Studio</strong>', 'class="brand-copy">Keeproot']) {
     assert.ok(nav.includes(text), text);
   }
+  assert.match(html, /<\/aside><div[^>]*aria-valuemin="68"[^>]*data-rail="app"/u);
   for (const icon of ['projects', 'resources', 'activity', 'import', 'settings']) {
     assert.ok(nav.includes(`data-icon="${icon}"`), icon);
   }
@@ -3400,7 +3404,7 @@ test('Project Compare route stays in the shell, filters choices, and rejects the
   const html = await response.text();
   assert.equal(response.status, 400);
   assert.match(html, /Choose two different files\./u);
-  assert.match(html, /PROJECT COMPARISON/u);
+  assert.match(html, /<h1>Compare Project files<\/h1>/u);
 });
 
 test('Atlas UI rejects a WebView2-restricted explicit port', async (t) => {

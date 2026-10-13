@@ -6,6 +6,7 @@ import { isPathInside, normalizeRoot } from './paths.js';
 import { captureProjectIdentity, compareProjectIdentity } from './project-identity.js';
 import { ProjectContextRepository } from './storage/repositories/project-context-repository.js';
 import { assertRecoveryWritable } from './storage/recovery-write-guard.js';
+import { CURRENT_COMMAND_GUIDE, PROJECT_REGISTRATION_REQUEST_SCHEMAS } from './protocol.js';
 
 const ROOT_TYPES = new Set([
   'managed_library',
@@ -462,6 +463,15 @@ export class Registry {
       context_links: [],
       project_candidates: projectCandidates,
       missing: containingRoots.length ? ['project_location'] : ['workspace_root', 'project_location'],
+      remediation: {
+        supported: true,
+        schema: 'atlas-project-registration.v1',
+        request_schemas: PROJECT_REGISTRATION_REQUEST_SCHEMAS,
+        command: 'atlas project register prepare --request-file <registration-request.json> --json',
+        required_authority: { path: resolvedPath, rootPolicy: 'project_only', reason: 'Explicit user task authorization for this exact Project folder.' },
+        request: { path: resolvedPath, rootPolicy: 'project_only', requestKey: '<stable-key>', caller: { actor: 'agent', tool: '<host>', client_run_id: '<run>' } },
+        guide: CURRENT_COMMAND_GUIDE.find(item => item.commands.includes('project register prepare')),
+      },
       source_changes: [],
     };
   }
@@ -514,7 +524,7 @@ export class Registry {
     const updatedAt = timestamp();
     this.ledger.updateProject(projectIdValue, {
       name: name == null ? existing.name : normalizeName(name),
-      currentPath: currentPath == null ? existing.current_path : normalizeProjectPath(currentPath),
+      currentPath: currentPath == null || currentPath === existing.current_path ? existing.current_path : normalizeProjectPath(currentPath),
       aliases: normalizeAliases(aliases),
       status: status ?? existing.status,
       reason,

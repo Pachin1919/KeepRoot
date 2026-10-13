@@ -29,6 +29,7 @@ export function currentSavedResourceLocation(db, resourceId) {
 
 const journalPath = (stateDir) => path.join(path.resolve(stateDir), 'ui', 'saved-work.json');
 const now = () => new Date().toISOString();
+const JOURNAL_RENAME_WAIT = new Int32Array(new SharedArrayBuffer(4));
 
 function conflict(message) {
   const error = new Error(message);
@@ -53,7 +54,15 @@ function writeJournal(stateDir, items) {
   const temporary = `${target}.tmp-${process.pid}-${crypto.randomUUID()}`;
   try {
     fs.writeFileSync(temporary, `${JSON.stringify({ items }, null, 2)}\n`, 'utf8');
-    fs.renameSync(temporary, target);
+    // A Windows reader can briefly deny replacement. Retry only this atomic
+    // rename while the existing state lock holds; never remove the old journal.
+    for (let attempt = 0; ; attempt += 1) {
+      try { fs.renameSync(temporary, target); break; }
+      catch (error) {
+        if (process.platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || attempt >= 3) throw error;
+        Atomics.wait(JOURNAL_RENAME_WAIT, 0, 0, 15 * (2 ** attempt));
+      }
+    }
   } finally {
     fs.rmSync(temporary, { force: true });
   }
@@ -104,10 +113,14 @@ function normalizedToken(value, fallback = null) {
 }
 
 function projectResourcePath(projectPath, target) {
+  if (typeof projectPath !== 'string') throw conflict('Save target has no verified Project path.');
   const project = path.posix.normalize(String(projectPath ?? '').replaceAll('\\', '/'));
   const targetPath = path.posix.normalize(String(target ?? '').replaceAll('\\', '/'));
-  if (!project || project === '.' || project === '..' || project.startsWith('../') || path.posix.isAbsolute(project)
-    || !targetPath || path.posix.isAbsolute(targetPath) || !targetPath.startsWith(`${project}/`)) throw conflict('Save target is outside the verified Project path.');
+  // Root-level location binding is verified by Intake/Derived before target
+  // facts are projected. Keep this relative-path check strict about escapes.
+  if (!project || project === '..' || project.startsWith('../') || path.posix.isAbsolute(project)
+    || !targetPath || path.posix.isAbsolute(targetPath)
+    || project !== '.' && !targetPath.startsWith(`${project}/`)) throw conflict('Save target is outside the verified Project path.');
   const relative = path.posix.relative(project, targetPath);
   if (!relative || path.posix.isAbsolute(relative) || relative === '..' || relative.startsWith('../')) throw conflict('Save target is outside the verified Project path.');
   return relative;
@@ -160,6 +173,19 @@ function result(row) {
 }
 
 export class SaveService {
+  #targetFacts(root, projectPath, target, projectId) {
+    if (projectPath === '' || projectPath === '.') {
+      const context = this.intake.derived?.projectContext;
+      const location = context?.getActiveLocation(projectId);
+      const adopted = location && context.getRoot(location.root_id).root.governance_status === 'adopted';
+      if (!adopted || path.resolve(location.root_path, location.relative_path)
+        .localeCompare(path.resolve(root), undefined, { sensitivity: 'accent' }) !== 0) {
+        throw conflict('Save target has no verified Root-level Project location.');
+      }
+    }
+    return projectTargetFacts(root, projectPath, target);
+  }
+
   constructor({ stateDir, intake = null, writeJournalFn = writeJournal, resourceControl = null }) {
     this.stateDir = path.resolve(stateDir);
     this.intake = intake ?? new Intake({ stateDir: this.stateDir });
@@ -330,7 +356,7 @@ export class SaveService {
       if (detail.run.id !== claim.save_id || detail.run.root_path !== stored.root || detail.candidate?.target_path !== stored.target || detail.candidate?.content_hash !== stored.candidate_hash || detail.placement?.project_id !== stored.project_id) throw conflict('The reserved save run does not match its immutable request facts.');
       const projectPath = detail.placement?.project_path;
       const target = detail.candidate?.target_path;
-      const targetFacts = projectTargetFacts(stored.root, projectPath, target);
+      const targetFacts = this.#targetFacts(stored.root, projectPath, target, stored.project_id);
       const project = { id: detail.placement.project_id, name: detail.placement.project_name ?? '' };
       if (detail.run.status === 'executed' && detail.execution_receipt?.verified) {
         const committing = mutate(this.stateDir, claim.save_id, (latest) => (latest?.status === 'reserving' && latest.owner_pid === claim.owner_pid && latest.owner_token === claim.owner_token
@@ -343,7 +369,7 @@ export class SaveService {
     }
     if (detail?.status !== 'prepared' || detail.run_id !== claim.save_id) throw conflict('The reserved save has an existing run that cannot be recovered yet.');
     const project = { id: detail.project.id, name: detail.project.name };
-    const target = projectTargetFacts(claim.prepare_request.root, detail.project.path, detail.target);
+    const target = this.#targetFacts(claim.prepare_request.root, detail.project.path, detail.target, project.id);
     const row = { ...claim, status: 'prepared', project, target, resources_href: projectResourceHref(`/projects/${encodeURIComponent(project.id)}`, target.resource_path), owner_pid: null, owner_token: null };
     return mutate(this.stateDir, claim.save_id, (latest) => (latest?.status === 'reserving' && latest.owner_pid === claim.owner_pid && latest.owner_token === claim.owner_token ? row : latest), this.writeJournal);
     } catch (error) {
@@ -452,7 +478,7 @@ export class SaveService {
     });
       if (prepared.status !== 'prepared' || prepared.run_id !== saveId) throw new Error(prepared.reason ?? 'Atlas could not prepare this save.');
       const project = { id: prepared.project.id, name: prepared.project.name };
-      const target = projectTargetFacts(normalized.root, prepared.project.path, prepared.target);
+      const target = this.#targetFacts(normalized.root, prepared.project.path, prepared.target, project.id);
       const row = {
         save_id: saveId, run_id: saveId, status: 'prepared', channel, caller, project,
         target, candidate, request_key,

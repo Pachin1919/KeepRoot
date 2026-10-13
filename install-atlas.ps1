@@ -6,6 +6,7 @@ param(
   [string]$SkillRoot = (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex\skills\atlas-file-governance'),
   [string]$NodePath = 'node.exe',
   [string]$DesktopPythonPath,
+  [string]$ShortcutRoot,
   [string[]]$LibraryRoot = @(),
   [switch]$NoStartMenuShortcut
 )
@@ -31,6 +32,8 @@ try {
 }
 
 $arguments = @($manager, $Command, '--install-root', $InstallRoot, '--skill-root', $SkillRoot, '--node', $nodeExecutable)
+if ($NoStartMenuShortcut) { $arguments += '--no-start-menu-shortcut' }
+if ($ShortcutRoot) { $arguments += @('--shortcut-root', $ShortcutRoot) }
 foreach ($root in $LibraryRoot) {
   $arguments += @('--library-root', $root)
 }
@@ -44,28 +47,6 @@ if ($runtimeExitCode -eq 0 -and $DesktopPythonPath -and $Command -in @('install'
   $runtimeExitCode = $LASTEXITCODE
 }
 
-if ($runtimeExitCode -eq 0 -and -not $NoStartMenuShortcut) {
-  $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
-  $shortcutPath = Join-Path $programs 'Atlas UI.lnk'
-  if ($Command -in @('install', 'upgrade')) {
-    try {
-      $shell = New-Object -ComObject WScript.Shell
-      $shortcut = $shell.CreateShortcut($shortcutPath)
-      $shortcut.TargetPath = (Get-Command powershell.exe -ErrorAction Stop).Source
-      $launcher = Join-Path $InstallRoot 'atlas-ui.ps1'
-      $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$launcher`""
-      $shortcut.WorkingDirectory = [Environment]::GetFolderPath('UserProfile')
-      $shortcut.Description = 'Open the local Atlas Workspace UI'
-      $icon = Join-Path $InstallRoot 'runtime\assets\atlas.ico'
-      if (Test-Path -LiteralPath $icon) { $shortcut.IconLocation = $icon }
-      $shortcut.WindowStyle = 7
-      $shortcut.Save()
-    } catch {
-      Write-Warning "Atlas Runtime was installed, but the Start menu shortcut could not be created: $($_.Exception.Message)"
-    }
-  } elseif ($Command -eq 'uninstall') {
-    Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
-  }
-}
+# Runtime manager owns the shared, ownership-checked Keeproot shortcut path.
 
 exit $runtimeExitCode

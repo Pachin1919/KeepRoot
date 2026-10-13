@@ -167,6 +167,8 @@ test('Desktop client checks the requested picker method independently', async ()
   let processingStatus = null;
   class FakeForm {
     constructor() { this.dataset = {}; this.attributes = {}; }
+    closest() { return null; }
+    matches() { return false; }
     setAttribute(name, value) { this.attributes[name] = value; }
   }
   const context = {

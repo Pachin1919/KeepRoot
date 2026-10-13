@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { projectDirectory } from '../project-files.js';
 import { realLocalFolder } from './desktop-selection-service.js';
+import crypto from 'node:crypto';
+import { createProjectRegistrationService } from '../../project-registration-service.js';
 
 function localPathEquals(left, right) {
   return path.resolve(left).localeCompare(path.resolve(right), undefined, { sensitivity: 'accent' }) === 0;
@@ -70,37 +72,17 @@ export function createProjectOnboardingService({ registry }) {
   }
   function registerFolder(folderPath, name) {
     const folder = realLocalFolder(folderPath);
-    for (const project of registry.list().filter((item) => item.status === 'active')) {
-      const location = registry.show(project.id).location;
-      if (location?.root_path && localPathEquals(projectDirectory(location), folder)) {
-        throw new Error('This folder is already managed as an Atlas Project.');
-      }
-    }
-    const roots = registry.listRoots().filter((root) => pathContains(root.current_path, folder))
-      .sort((left, right) => right.current_path.length - left.current_path.length);
-    let rootId;
-    let relativePath;
-    if (roots.length && !localPathEquals(roots[0].current_path, folder)) {
-      rootId = roots[0].id;
-      relativePath = path.relative(roots[0].current_path, folder).replaceAll('\\', '/');
-    } else {
-      const parent = realLocalFolder(path.dirname(folder));
-      const adopted = registry.adoptRoot({ rootPath: parent, rootType: 'workspace_container', contentPolicy: 'structure_only' });
-      rootId = adopted.root_id;
-      relativePath = path.basename(folder);
-    }
-    const created = registry.create({ name: projectFolderName(name), currentPath: relativePath });
+    const service = createProjectRegistrationService({ stateDir: registry.stateDir, registry });
+    const key = crypto.randomUUID();
+    const caller = { actor: 'user', tool: 'Atlas Desktop', client_run_id: key };
     try {
-      registry.attachRoot(created.project_id, {
-        rootId,
-        relativePath,
-        reason: 'User registered this local folder in Atlas Desktop.',
+      const prepared = service.prepare({ path: folder, name: projectFolderName(name), rootPolicy: 'project_only', requestKey: `${key}-prepare`, caller });
+      const receipt = service.execute(prepared.registration_id, {
+        expectedRevision: prepared.revision, expectedDigest: prepared.digest, requestKey: `${key}-execute`, caller,
+        authorization: { path: folder, reason: 'User selected and confirmed this local Project folder in Atlas Desktop.' },
       });
-    } catch (error) {
-      registry.evolve(created.project_id, { status: 'archived', reason: 'Project registration could not attach the selected local folder.' });
-      throw error;
-    }
-    return { project: registry.list().find((item) => item.id === created.project_id), folder };
+      return { project: receipt.project, folder, receipt };
+    } finally { service.dispose(); }
   }
 
   function previewNewProject(parentPath, rawName) {

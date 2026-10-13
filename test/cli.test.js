@@ -525,6 +525,7 @@ test('Agent JSON protocol exposes version, capabilities, doctor, and structured 
     assert.ok(envelope.data);
     if (expected === 'capabilities') {
       assert.deepEqual(envelope.data.product_entrypoints.current_product.commands, [
+        'project register prepare', 'project register show', 'project register execute', 'project register recover',
         'capture source prepare-markdown',
         'handoff create', 'handoff list', 'handoff show', 'handoff read',
         'module list', 'module package-preview', 'module package-list', 'module install', 'module preview', 'module save', 'module enable', 'module disable',

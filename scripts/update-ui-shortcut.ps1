@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory = $true)][string]$InstallRoot,
-  [string]$ShortcutRoot = (Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs')
+  [string]$ShortcutRoot = (Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs'),
+  [switch]$Remove
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
@@ -36,6 +37,16 @@ function OwnShortcut([string]$File) {
   if (-not $match.Success) { return $false }
   $fileArgument = if ($match.Groups[1].Success) { $match.Groups[1].Value } else { $match.Groups[2].Value }
   try { return [IO.Path]::GetFullPath($fileArgument) -eq $wrapper } catch { return $false }
+}
+if ($Remove) {
+  $removed = @()
+  $retained = @()
+  foreach ($entry in @($oldPath, $newPath)) {
+    if (OwnShortcut $entry) { Remove-Item -LiteralPath $entry -Force; $removed += $entry }
+    elseif (Test-Path -LiteralPath $entry) { $retained += $entry }
+  }
+  [pscustomobject]@{ status = 'removed'; install_root = $homePath; removed = $removed; retained_foreign = $retained } | ConvertTo-Json -Compress
+  exit 0
 }
 $newExists = Test-Path -LiteralPath $newPath
 if ($newExists -and -not (OwnShortcut $newPath)) { throw 'Keeproot.lnk belongs to another application or installation; refusing overwrite.' }

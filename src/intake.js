@@ -119,7 +119,18 @@ function explicitTargetRecommendation(ledger, root, targetInput, projectId, role
     throw new Error(`Intake explicit target escapes the root: ${targetInput}`);
   }
   const relative = toPortablePath(path.relative(root, lexical));
-  const insideProject = relative.startsWith(`${project.current_path}/`);
+  let insideProject = relative.startsWith(`${project.current_path}/`);
+  if (project.current_path === '' || project.current_path === '.') {
+    const location = ledger.db.prepare(`
+      SELECT l.relative_path, r.current_path AS root_path
+      FROM project_locations l JOIN portfolio_roots r ON r.id = l.root_id
+      WHERE l.project_id = ? AND l.status = 'active' AND r.governance_status = 'adopted'
+    `).get(projectId);
+    // Root-level Projects are bound to the recorded location, not any caller-
+    // supplied Root. Existing root-containment and absent-target gates remain.
+    const recorded = location ? path.resolve(location.root_path, location.relative_path) : null;
+    insideProject = recorded !== null && recorded.localeCompare(root, undefined, { sensitivity: 'accent' }) === 0;
+  }
   if (!insideProject) {
     return {
       status: 'blocked',
@@ -726,8 +737,15 @@ export class Intake {
         throw stateConflict('Intake source Candidate changed after prepare; prepare a new Intake run.');
       }
       const currentProject = this.derived.ledger.getProject(currentDetail.placement.project_id);
-      if (currentProject.status !== 'active' || !preparedProjectPath || currentProject.current_path !== preparedProjectPath) {
+      if (currentProject.status !== 'active' || typeof preparedProjectPath !== 'string' || currentProject.current_path !== preparedProjectPath) {
         throw stateConflict('Intake Project changed after prepare; recompute placement before execution.');
+      }
+      if (preparedProjectPath === '' || preparedProjectPath === '.') {
+        const location = this.derived.projectContext.getActiveLocation(currentProject.id);
+        const recorded = location ? path.resolve(location.root_path, location.relative_path) : null;
+        if (recorded === null || recorded.localeCompare(path.resolve(currentDetail.run.root_path), undefined, { sensitivity: 'accent' }) !== 0) {
+          throw stateConflict('Intake Project Root location changed after prepare; recompute placement before execution.');
+        }
       }
       if (context.attention) {
         const currentAttention = this.rules.context({ root: currentDetail.run.root_path, request: context.attention.request });

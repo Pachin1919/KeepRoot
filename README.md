@@ -6,10 +6,11 @@ Keeproot keeps files in their existing project folders. People and AI hosts use 
 
 Current version: **2.0.0-preview.1**. This is preview source, not a stable release. Atlas remains the technical name used by the CLI, protocol, Skill and installation directories.
 
-The October 12 UI checkpoint adds fixed reader monitors, brighter controls, optional short transitions and read-only Git history. Its source baseline ran once: 1,031 tests passed, 44 failed, and one was skipped. Three stale UI assertions were corrected and passed a focused check; the earlier 41 failures remain. UI integration, navigation return context and Skill checks still need reconciliation. This checkpoint is not an installation release.
+The October 13 candidate adds CLI registration for an explicitly authorized existing directory, without a native picker or manual IDs. An isolated installed workflow completed registration, reading, Save, UI readback of the same Resource and reopening; Markdown editing, confirmation and Undo were also exercised. All 41 previously retained checks passed a focused independent run. The milestone evidence is segmented: the initial full run reached its time budget, five diagnosed failures passed targeted repairs, and the previously unstarted tail passed. This is not a claim of one green full-suite run or a stable release.
 
 ## What you can try
 
+- Preview and register an explicitly authorized existing Project directory through `project register prepare/show/execute/recover`; preserve files in place and reuse returned identities.
 - Browse and read Markdown, text, images, PDF, DOCX and CSV/XLSX in the workspace.
 - Open Toolbox in the left navigation, select CSV/XLSX materials, and enter a Python table recipe: align, combine, filter, convert types, deduplicate and sort; preview and save the full result.
 - In Toolbox → Content conversion, turn a supported static public URL into a real `.md` file: choose an existing folder, preview, explicitly Save, then read. Source JSON and conversation export capture remain separate options.
@@ -63,7 +64,7 @@ This repository is public source. A project-wide open-source license has not bee
 
 ### Publishing changes
 
-Known test limitations: the October 12 baseline has 41 failed checks across UI structure, return context and Skill contracts. Earlier isolated workflow evidence does not replace this regression gate. Native, second-host and real-project validation remain pending.
+Known limitations: native windows, second-product Host continuation, nondeveloper first use and real-project validation remain pending. Single-Resource rename/move has no complete supported service chain. The source candidate passed named isolated workflows and repaired retained checks; these do not replace those remaining acceptance gates.
 
 Use a sanitized checkout for public updates. Do not merge private development history into this repository. Before committing, run `python scripts/check-public-source.py --worktree`; before pushing, run it without that flag. Enable the included local check with `git config --local core.hooksPath .githooks`. The hook uses Python from PATH or `ATLAS_PUBLIC_CHECK_PYTHON`. CI also checks all reachable history. The checks help detect excluded paths and common sensitive patterns; review public content before upload.
 

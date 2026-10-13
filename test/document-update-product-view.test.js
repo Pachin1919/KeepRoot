@@ -44,7 +44,7 @@ test('review forms retain guards, distinct retry keys and the same Resource read
   const href = page.match(/href="([^"]*resources\/read\?[^"]+)"/u)[1].replaceAll('&amp;', '&');
   const url = new URL(href, 'http://atlas.local');
   assert.equal(url.searchParams.get('resource_id'), 'RES-review');
-  assert.equal(url.searchParams.get('return_to'), '/projects/PRJ-review/resources?resource_id=RES-review');
+  assert.equal(url.searchParams.get('return_to'), '/projects/PRJ-review/resources');
   const block = page.match(/data-document-change>([\s\S]*?)<\/section>/u)[1];
   assert.match(block, /&lt;script&gt;修订建议&lt;\/script&gt;/u);
   assert.doesNotMatch(block, /初始建议|<script>/u);

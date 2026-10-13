@@ -1,5 +1,6 @@
 export const TOOLBOX_MESSAGES = Object.freeze({
   "en": {
+    "toolbox.revision_error": "The Work revision changed; reload this Work before continuing.",
     "toolbox.catalog_help": "Choose a tool, then choose its materials. Preview before saving.",
     "toolbox.convert_group": "Convert & organise",
     "toolbox.convert_group_help": "Turn a source into a usable file.",
@@ -100,6 +101,7 @@ export const TOOLBOX_MESSAGES = Object.freeze({
     "toolbox.no_change": "The text is unchanged."
   },
   "zh-CN": {
+    "toolbox.revision_error": "Work 版本已变化，请重新载入当前工作后继续。",
     "toolbox.catalog_help": "先选工具，再选材料。结果先预览，再保存。",
     "toolbox.convert_group": "转换与整理",
     "toolbox.convert_group_help": "把来源变成可继续使用的文件。",

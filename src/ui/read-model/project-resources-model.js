@@ -400,6 +400,31 @@ export function buildProjectResourcesModel({ project, root, base, recentWork, sa
   };
 }
 
+// Reader already resolved and read one Resource. Assemble its context from that
+// identity and existing metadata, without browsing the Project or hashing peers.
+export function buildReaderResourceContext({ project, base, reader, resourceFact, savedWork = [], workSessions = [] }) {
+  if (reader.project_id !== project.id || resourceFact.resource_id !== reader.resource_id) throw new Error('Reader context identity changed.');
+  const saved = savedWork.find(item => item.resource_id === reader.resource_id) ?? null;
+  const resource = {
+    ...resourceFact, resource_fact: resourceFact, name: reader.name, relative_path: reader.relative_path,
+    type: resourceType(reader.relative_path), bytes: reader.bytes, open_available: Boolean(reader.relative_path),
+    actions: recoveryActions(resourceFact, project.id), state: resourceFact.external_change?.status,
+    saved_work: saved ? { ...saved, sources: saved.sources ?? [], recipe: saved.recipe ?? null } : null,
+    relationship_focus: null,
+  };
+  const resultWorkId = saved?.parameters?.work_session_id;
+  resource.related_work = workSessions.filter(work => work.session_id === resultWorkId || work.sources?.some(source => source.resource_id === reader.resource_id)).map(work => {
+    const result = work.latest_save_id ? savedWork.find(item => item.work_id === work.latest_save_id || item.save_id === work.latest_save_id) : null;
+    const freshness = result ? savedResultFreshness(result, { sourceFreshness: work.freshness, versionPolicy: sourceVersionPolicy(work.sources, result.version_policy) }) : null;
+    return { session_id: work.session_id, intent: work.intent, revision: work.revision,
+      recipe_label: `Recipe v${work.recipe?.version ?? 1}`, freshness_label: work.freshness?.label ?? 'Not checked',
+      result_label: result ? `${path.basename(result.result_path)} · ${freshness.label}` : 'No saved Result',
+      result_freshness: freshness?.label ?? null, updated_at: work.updated_at,
+      href: `/work/${encodeURIComponent(work.session_id)}`, reuse_action: `/work/${encodeURIComponent(work.session_id)}/reuse` };
+  });
+  return { project, base, focused_resource: resource };
+}
+
 export function buildProjectResourceDetailModel({ project, root, base, recentWork, savedWork = [], currentActivity = [], resourceFacts = [], workSessions = [], relativePath }) {
   const target = contentFilePath(projectPath(root, relativePath));
   const stat = fs.lstatSync(target);

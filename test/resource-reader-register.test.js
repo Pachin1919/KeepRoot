@@ -89,7 +89,8 @@ test('HTML explicit Read on an unregistered Project file uses CSRF and returns t
   const href=first.headers.get('location'),id=new URL(href,server.workspace_url).searchParams.get('resource_id');assert.ok(id);
   const reader=await fetch(new URL(href,server.workspace_url));assert.equal(reader.status,200);
   const html=await reader.text();assert.match(html,/A readable local file/u);assert.ok(html.includes(id));
-  assert.ok(html.includes(`href="${base}?folder=&amp;resource_id=${id}"`));
+  assert.ok(html.includes(`href="${base}?folder="`));
+  assert.match(html,new RegExp(`data-reader-resource-id="${id}"`,'u'));
   assert.equal((await post(csrf,'说明.md')).headers.get('location'),href);assert.equal(f.control.projectResources(f.id).length,1);
   const maliciousReturn=await post(csrf,'说明.md','https://outside.invalid/');
   const safeReturn=new URL(maliciousReturn.headers.get('location'),server.workspace_url).searchParams.get('return_to');

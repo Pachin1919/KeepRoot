@@ -1356,6 +1356,18 @@ function bindReaderInlineEditor(surface) {
       const replacement = incoming?.querySelector('#reader-content');
       // A conflict page is useful and preserves the submitted draft; unrelated error pages are not.
       if (!replacement || incoming.dataset.readerResourceId !== surface.dataset.readerResourceId || (!response.ok && response.status !== 409)) throw Error('Reader response unavailable');
+      const unavailableEdit = incoming.querySelector('[data-reader-edit-unavailable]');
+      if (unavailableEdit && !options.method) {
+        status.textContent = unavailableEdit.textContent;
+        status.hidden = false;
+        surface.dataset.readerDefaultEdit = 'false';
+        if (editControl) {
+          editControl.removeAttribute('href');
+          editControl.removeAttribute('data-reader-inline-edit');
+          editControl.setAttribute('aria-disabled', 'true');
+        }
+        return;
+      }
       const returned = new URL(response.url);
       if (!replacement.querySelector('.reader-edit') && (returned.origin !== window.location.origin || returned.pathname !== base + '/resources/read' || returned.searchParams.get('resource_id') !== surface.dataset.readerResourceId)) throw Error('Invalid Reader result address');
       if (requestedRevision !== inputRevision || requestedGeneration !== editorGeneration) throw Error('Draft changed during request');
