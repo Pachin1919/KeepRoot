@@ -1,0 +1,7 @@
+interface:
+  display_name: "Keeproot"
+  short_description: "Local files, verified results and recovery"
+  default_prompt: "Use $keeproot to locate the installed local Runtime and perform the authorized file or Project task through its CLI."
+
+policy:
+  allow_implicit_invocation: true

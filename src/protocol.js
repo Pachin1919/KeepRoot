@@ -94,7 +94,7 @@ export const CAPABILITIES = Object.freeze({
     format: 'atlas-runtime-install.v1',
     minimum_node_major: 24,
     mode: 'user_scope_offline_copy',
-    user_skill: 'atlas-file-governance',
+    user_skill: 'keeproot',
     state_outside_governed_library: true,
   },
   json_flag: '--json',

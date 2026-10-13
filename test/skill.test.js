@@ -9,7 +9,7 @@ import { InstalledSkillDriver } from '../test-support/installed-skill-driver.js'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cliPath = path.join(projectRoot, 'bin', 'atlas.js');
-const skillRoot = path.join(projectRoot, '.agents', 'skills', 'atlas-file-governance');
+const skillRoot = path.join(projectRoot, '.agents', 'skills', 'keeproot');
 const fixtureRoot = path.join(projectRoot, 'fixtures', 'vault-template');
 const tempRoot = path.join(projectRoot, 'test', '.tmp');
 
@@ -59,10 +59,13 @@ test('repository Agent Skill is a complete user-installable source and reference
   const currentSave = fs.readFileSync(path.join(skillRoot, 'references', 'current-save.md'), 'utf8');
   const currentTableWork = fs.readFileSync(path.join(skillRoot, 'references', 'current-table-work.md'), 'utf8');
 
-  assert.match(skill, /^---\r?\nname: atlas-file-governance\r?\ndescription: .+\r?\n---/);
+  assert.match(skill, /^---\r?\nname: keeproot\r?\ndescription: .+\r?\n---/);
   assert.doesNotMatch(`${skill}\n${metadata}\n${protocol}\n${workflows}\n${currentResource}\n${currentSave}\n${currentTableWork}`, /\bTODO\b|\[TODO/);
-  assert.match(metadata, /\$atlas-file-governance/);
-  assert.match(metadata, /Atlas File Governance/);
+  assert.match(metadata, /\$keeproot/);
+  assert.match(metadata, /display_name: "Keeproot"/);
+  assert.match(skill.match(/^description: (.+)$/mu)[1].slice(0, 120), /Keeproot.*CLI/);
+  assert.match(skill, /not a tool named `keeproot`/u);
+  assert.match(fs.readFileSync(path.join(projectRoot, '.agents/skills/atlas-file-governance/SKILL.md'), 'utf8'), /\.\.\/keeproot\/SKILL\.md/u);
   assert.match(skill, /installed Atlas Runtime/u);
   assert.match(skill, /Do not use for Atlas source development/u);
   assert.doesNotMatch(skill, /Trigger for Atlas/u);

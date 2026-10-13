@@ -3,7 +3,7 @@ param(
   [ValidateSet('install', 'locate', 'upgrade', 'uninstall')]
   [string]$Command = 'install',
   [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'Atlas'),
-  [string]$SkillRoot = (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex\skills\atlas-file-governance'),
+  [string]$SkillRoot = (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex\skills\keeproot'),
   [string]$NodePath = 'node.exe',
   [string]$DesktopPythonPath,
   [string]$ShortcutRoot,
@@ -31,7 +31,10 @@ try {
   exit 1
 }
 
-$arguments = @($manager, $Command, '--install-root', $InstallRoot, '--skill-root', $SkillRoot, '--node', $nodeExecutable)
+$arguments = @($manager, $Command, '--install-root', $InstallRoot, '--node', $nodeExecutable)
+if ($Command -ne 'uninstall' -or $PSBoundParameters.ContainsKey('SkillRoot')) {
+  $arguments += @('--skill-root', $SkillRoot)
+}
 if ($NoStartMenuShortcut) { $arguments += '--no-start-menu-shortcut' }
 if ($ShortcutRoot) { $arguments += @('--shortcut-root', $ShortcutRoot) }
 foreach ($root in $LibraryRoot) {

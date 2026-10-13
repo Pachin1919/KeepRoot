@@ -129,7 +129,7 @@ function copyRuntime(sourceRoot, target) {
 }
 
 function copySkill(sourceRoot, target) {
-  const source = path.join(sourceRoot, '.agents', 'skills', 'atlas-file-governance');
+  const source = path.join(sourceRoot, '.agents', 'skills', 'keeproot');
   if (!fs.existsSync(path.join(source, 'SKILL.md'))) throw new Error(`Atlas Skill source is missing: ${source}`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.cpSync(source, target, { recursive: true, force: true });

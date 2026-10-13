@@ -20,10 +20,10 @@ function defaultSkillRoot() {
   const skillsHome = process.env.CODEX_HOME
     ? path.join(process.env.CODEX_HOME, 'skills')
     : path.join(os.homedir(), '.codex', 'skills');
-  return path.join(skillsHome, 'atlas-file-governance');
+  return path.join(skillsHome, 'keeproot');
 }
 
-function parse(args) {
+function parse(args, command) {
   const result = { libraryRoots: [] };
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
@@ -41,7 +41,8 @@ function parse(args) {
     }
   }
   result.installRoot ??= defaultInstallRoot();
-  result.skillRoot ??= defaultSkillRoot();
+  // Uninstall follows the recorded owner, including pre-Keeproot Skill paths.
+  if (command !== 'uninstall') result.skillRoot ??= defaultSkillRoot();
   result.nodePath ??= process.execPath;
   return result;
 }
@@ -57,7 +58,7 @@ Usage:
 
 Options:
   --install-root <path>  User Runtime/state root (default: %LOCALAPPDATA%\\Atlas)
-  --skill-root <path>    User Skill directory (default: ~/.codex/skills/atlas-file-governance)
+  --skill-root <path>    User Skill directory (default: ~/.codex/skills/keeproot)
   --node <path>          Node.js 24+ executable
   --library-root <path>  Reject installation inside this governed Library; repeatable
   --shortcut-root <path> Explicit existing Windows shortcut directory; isolated tests use test/.tmp
@@ -83,7 +84,7 @@ function main() {
     console.log(usage());
     return;
   }
-  const options = parse(rest);
+  const options = parse(rest, command);
   let result;
   if (command === 'install' || command === 'upgrade') {
     result = installRuntime({ ...options, sourceRoot, operation: command });

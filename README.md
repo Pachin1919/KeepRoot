@@ -4,9 +4,13 @@
 
 Keeproot keeps files in their existing project folders. People and AI hosts use the same resource identities, work revisions, saved results and recovery state. The host understands content and proposes changes; Keeproot checks local facts and executes supported operations.
 
-Current version: **2.0.0-preview.1**. This is preview source, not a stable release. Atlas remains the technical name used by the CLI, protocol, Skill and installation directories.
+Current version: **2.0.0-preview.1**. This is preview source, not a stable release. Atlas remains the technical name used by the CLI, protocol and installation directories.
 
 The October 13 candidate adds CLI registration for an explicitly authorized existing directory, without a native picker or manual IDs. An isolated installed workflow completed registration, reading, Save, UI readback of the same Resource and reopening; Markdown editing, confirmation and Undo were also exercised. All 41 previously retained checks passed a focused independent run. The milestone evidence is segmented: the initial full run reached its time budget, five diagnosed failures passed targeted repairs, and the previously unstarted tail passed. This is not a claim of one green full-suite run or a stable release.
+
+## Codex entry
+
+The installed Skill is `$keeproot`: it locates and calls the local `atlas` CLI, rather than searching for an MCP tool named `keeproot`. Existing `atlas-file-governance` references remain compatible. Project `AGENTS.md` instructions do not install Hooks; optional events require a reviewed binding and configuration. Skill discovery and an isolated PostToolUse configuration were read back from Codex. Actual model-triggered Hook operation remains unverified.
 
 ## What you can try
 
