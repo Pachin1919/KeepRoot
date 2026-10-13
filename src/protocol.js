@@ -103,7 +103,7 @@ export const CAPABILITIES = Object.freeze({
     event_entry: 'node <Runtime>/bin/atlas-host-events.js --binding <reviewed-binding.json> --json',
     supported_hook_input: 'Codex PostToolUse with session_id, turn_id and tool_use_id',
     precompact: 'skipped_without_unique_documented_event_identity',
-    session_surface: 'Project Handoff HTML UI; Codex App Server 0.162.0-alpha.2',
+    session_surface: 'Project Handoff HTML UI; reviewed Codex App Server 0.162.0-alpha.2 and 0.162.0-alpha.17.2',
     authority: 'explicit_operator_configuration_for_actual_process_access_and_account_use',
     acceptance: 'real_model_turn_and_user_hook_activation_not_verified',
   },
