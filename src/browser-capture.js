@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { RuntimeStorage } from './runtime-storage.js';
 import { fetchPublicDocument } from './public-web-capture.js';
+import { captureHttpFetch } from './capture-network.js';
 
 const CAPTURE_SCHEMA = 'atlas-browser-capture.v1';
 const MAX_CAPTURE_BYTES = 32 * 1024 * 1024;
@@ -144,7 +145,7 @@ function messageMarkdown(capture) {
     const content = normalizeText(item?.content);
     if (!role || !content) continue;
     const label = role === 'user' ? '用户'
-      : role === 'assistant' ? 'ChatGPT'
+      : role === 'assistant' ? capture.capture_mode==='gemini_share' ? 'Gemini' : 'ChatGPT'
         : role;
     counts[role] = (counts[role] ?? 0) + 1;
     messages.push(`## ${label}\n\n${content}`);
@@ -184,7 +185,7 @@ function formatCapture(capture) {
 }
 
 export class BrowserCapture {
-  constructor({ stateDir, storage = null, fetchImpl = globalThis.fetch, lookupHost = undefined }) {
+  constructor({ stateDir, storage = null, fetchImpl = captureHttpFetch, lookupHost = undefined }) {
     if (!stateDir) throw new Error('BrowserCapture requires a stateDir.');
     this.stateDir = path.resolve(stateDir);
     this.storage = storage ?? new RuntimeStorage({ stateDir: this.stateDir });

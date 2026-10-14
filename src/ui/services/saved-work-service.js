@@ -105,17 +105,28 @@ function destination(projectRoot, folder, fileName, sourcePath = null, checkExis
 }
 
 export function createSavedWorkService({ stateDir, saveService = null }) {
-  const currentState = () => {
+  const currentState = (projectIds = null) => {
     const state = readSavedWorkState(stateDir);
-    if (saveService) state.items = state.items.map((item) => validRecord(saveService.projectRecord(item)));
+    if (saveService) state.items = saveService.projectRecords(state.items, { projectIds }).map(validRecord);
+    else if(projectIds) state.items=state.items.filter(item=>projectIds.includes(item.project?.id));
     return state;
   };
   const stateForProject = (projectId) => {
-    const state = currentState();
+    const state = currentState([projectId]);
     return {
       items: state.items.filter((item) => (['active', 'executed'].includes(item.status) || (item.status === 'undone' && item.write?.redo_available === true)) && item.project?.id === projectId),
       error: state.error,
     };
+  };
+  const stateForProjects = (projectIds) => {
+    // One request snapshot; do not persist this cache across reads or writes.
+    const state = currentState(projectIds);
+    const grouped = new Map(projectIds.map(id => [id, { items: [], error: state.error }]));
+    for (const item of state.items) {
+      if (!(['active', 'executed'].includes(item.status) || (item.status === 'undone' && item.write?.redo_available === true))) continue;
+      grouped.get(item.project?.id)?.items.push(item);
+    }
+    return grouped;
   };
   const listForProject = (projectId) => {
     const state = stateForProject(projectId);
@@ -172,5 +183,5 @@ export function createSavedWorkService({ stateDir, saveService = null }) {
     if (!saveService) throw new Error('The Atlas Save Service is unavailable for current Redo.');
     return saveService.redo(workId);
   };
-  return { stateForProject, listForProject, find, activityItems, prepareDestination, replayRequest, save, undo, redo };
+  return { stateForProject, stateForProjects, listForProject, find, activityItems, prepareDestination, replayRequest, save, undo, redo };
 }

@@ -255,7 +255,7 @@ document.querySelectorAll('[data-resource-workspace]').forEach((workspace) => {
   const tree = workspace.querySelector('[data-resource-tree]');
   const fileList = workspace.querySelector('[data-resource-file-list]');
   const listToggle = document.querySelector(`[data-resource-list-toggle][aria-controls="${CSS.escape(fileList?.id ?? '')}"]`);
-  if (!projectId || !projectBase || !tree || !fileList || !listToggle) return;
+  if (!projectId || !projectBase || !tree || !fileList) return;
   const storageKey = `atlas-ui-open-folders:${projectId}`;
   const selectedFolderKey = `atlas-ui-selected-folder:${projectId}`;
   const resourceListKey = `atlas-ui-resource-list:${projectId}`;
@@ -524,8 +524,11 @@ document.querySelectorAll('[data-resource-workspace]').forEach((workspace) => {
 
   folderControls.forEach((control) => {
     control.addEventListener('click', (event) => {
+      const folderPath = control.dataset.folderPath ?? '';
+      const group = fileGroups.find(item => (item.dataset.folderFiles ?? '') === folderPath);
+      if (!group || group.dataset.folderLoaded !== 'true') return;
       event.preventDefault();
-      void selectFolder(control.dataset.folderPath ?? '', { clearResource: true });
+      void selectFolder(folderPath, { clearResource: true });
     });
     const folder = ownExpandableFolder(control);
     if (folder) control.addEventListener('dblclick', (event) => {
@@ -548,6 +551,7 @@ document.querySelectorAll('[data-resource-workspace]').forEach((workspace) => {
 
   const compactResourceWorkspace = () => workspace.getBoundingClientRect().width <= 900;
   const setFileListExpanded = (expanded, { persist = true } = {}) => {
+    if (!listToggle) { fileList.hidden=false;workspace.classList.remove('is-file-list-collapsed');return; }
     fileList.hidden = !expanded;
     workspace.classList.toggle('is-file-list-collapsed', !expanded);
     listToggle.setAttribute('aria-expanded', String(expanded));
@@ -562,7 +566,7 @@ document.querySelectorAll('[data-resource-workspace]').forEach((workspace) => {
     ? !compactResourceWorkspace()
     : storageGet('localStorage', resourceListKey) !== 'collapsed';
   setFileListExpanded(initialListExpanded, { persist: false });
-  listToggle.addEventListener('click', () => setFileListExpanded(listToggle.getAttribute('aria-expanded') !== 'true'));
+  listToggle?.addEventListener('click', () => setFileListExpanded(listToggle.getAttribute('aria-expanded') !== 'true'));
 
   const paneWidthKey = `atlas-ui-resource-pane-widths:${projectId}`;
   const paneResizers = [...workspace.querySelectorAll('[data-resource-pane-resizer]')];
@@ -679,18 +683,27 @@ document.querySelectorAll('[data-import-status-href]:not([data-activity-live])')
 const activityRegion = document.querySelector('[data-activity-live]');
 if (activityRegion) {
   const connection = activityRegion.querySelector('.activity-manager-connection');
+  let activityDisposed = false;
+  let activityRequest = null;
+  let activityAbort = null;
+  let activityEvents = null;
   const openKeys = () => new Set([...activityRegion.querySelectorAll('[data-activity-key][open]')]
     .map((item) => item.dataset.activityKey));
-  const refreshActivity = async () => {
+  const readActivity = async () => {
+    if (activityDisposed) return;
+    activityAbort = typeof AbortController === 'function' ? new AbortController() : null;
     const selected = activityRegion.dataset.selectedActivity;
     const fragmentHref = new URL(activityRegion.dataset.fragmentHref, window.location.origin);
+    if (activityRegion.dataset.historyPage) fragmentHref.searchParams.set('page', activityRegion.dataset.historyPage);
     if (selected) fragmentHref.searchParams.set('selected', selected);
-    const response = await fetch(fragmentHref, { headers: { accept: 'text/html' } });
+    const response = await fetch(fragmentHref, { headers: { accept: 'text/html' }, signal: activityAbort?.signal });
     if (!response.ok) throw new Error('Activity update failed.');
     const template = document.createElement('template');
     template.innerHTML = await response.text();
     const next = template.content.querySelector('[data-activity-live]');
     if (!next) throw new Error('Activity update was incomplete.');
+    if (activityDisposed) return;
+    if (next.dataset?.historyPage) activityRegion.dataset.historyPage = next.dataset.historyPage;
     const expanded = openKeys();
     const focusedControl = activityRegion.contains(document.activeElement) ? document.activeElement : null;
     const focusedActivity = focusedControl?.closest?.('[data-activity-key]') ?? null;
@@ -717,13 +730,20 @@ if (activityRegion) {
       nextFocus?.focus({ preventScroll: true });
     }
   };
+  const refreshActivity = () => {
+    if (activityDisposed) return Promise.resolve();
+    if (!activityRequest) activityRequest = readActivity().finally(() => { activityRequest = null; activityAbort = null; });
+    return activityRequest;
+  };
   let fallbackTimer = null;
   let fallbackCount = 0;
   const fallback = () => {
-    if (fallbackTimer) return;
+    if (activityDisposed || fallbackTimer) return;
     const nextPoll = async () => {
+      if (activityDisposed) return;
       fallbackCount += 1;
       try { await refreshActivity(); } catch {}
+      if (activityDisposed) return;
       const status = activityRegion.querySelector('.activity-manager-connection');
       if (fallbackCount >= 12) {
         if (status) status.textContent = activityRegion.dataset.connectionLost || 'Live updates are unavailable. Reopen Activity to retry.';
@@ -736,7 +756,7 @@ if (activityRegion) {
     nextPoll();
   };
   if (typeof EventSource === 'function') {
-    const events = new EventSource(activityRegion.dataset.eventsHref);
+    const events = activityEvents = new EventSource(activityRegion.dataset.eventsHref);
     events.addEventListener('ready', () => {
       const status = activityRegion.querySelector('.activity-manager-connection');
       if (status) status.textContent = activityRegion.dataset.connectionLive || 'Local activity is updating live.';
@@ -747,9 +767,16 @@ if (activityRegion) {
     if (connection) connection.textContent = activityRegion.dataset.connectionPoll || 'Live updates are unavailable. Checking periodically.';
     fallback();
   }
+  window.addEventListener?.('pagehide', () => {
+    activityDisposed = true;
+    activityEvents?.close();
+    activityAbort?.abort();
+    if (fallbackTimer) window.clearTimeout(fallbackTimer);
+  }, { once: true });
   if (activityRegion.dataset.importStatusHref) {
     let importPolls = 0;
     const followImport = async () => {
+      if (activityDisposed) return;
       importPolls += 1;
       try {
         const response = await fetch(activityRegion.dataset.importStatusHref, { headers: { accept: 'application/json' } });

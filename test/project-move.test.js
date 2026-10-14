@@ -62,6 +62,10 @@ test('real Resource Work Save and three Board blocks keep identities and paths a
   assert.equal(f.registry.ledger.workSessions.byId(f.work.session_id).preview, null);
   assert.equal(f.registry.ledger.workSessions.byId(f.work.session_id).sources[0].fingerprint.file_path, path.join(f.workspace, 'B/nested/note.csv'));
   const shown = f.saveService.show(f.saved.save_id); assert.equal(shown.current_output, 'verified'); assert.equal(shown.target.path, path.join(f.workspace, 'B/nested/result.csv'));
+  const receipt = JSON.parse(savedBefore).items.find(item => item.save_id === f.saved.save_id);
+  const projected = f.saveService.projectRecord(receipt);
+  assert.deepEqual(f.saveService.projectRecords([receipt]), [projected], 'Batch browsing must resolve the moved target and Source exactly like a single receipt.');
+  assert.equal(projected.undo_available, false, 'Browsing must not enable an original Save Undo at the relocated path.');
   assert.deepEqual(fs.readFileSync(path.join(f.stateDir, 'ui/saved-work.json')), savedBefore);
   const board = f.boardService.showBoard(projectId, f.board.board_id);
   assert.equal(board.blocks[0].path, path.join(f.workspace, 'B/nested/note.csv'));

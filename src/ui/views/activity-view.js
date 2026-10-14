@@ -15,8 +15,8 @@ function time(value, t, locale) {
 
 function initiatorLabel(item, t) {
   if (item.initiated_by?.channel === 'host') return item.initiated_by.agent || t('host');
-  if (item.initiated_by?.channel === 'desktop') return 'Atlas Desktop';
-  return 'Atlas';
+  if (item.initiated_by?.channel === 'desktop') return `${UI_DISPLAY_NAME} Desktop`;
+  return UI_DISPLAY_NAME;
 }
 
 function statusInfo(item, current, t) {
@@ -66,18 +66,27 @@ function currentSection(items, csrfToken, selectedActivityKey, t, locale) {
   return `<section class="activity-manager-empty" data-activity-current><span>${escapeHtml(t('no_active'))}</span></section>`;
 }
 
-function recentSection(items, csrfToken, selectedActivityKey, t, locale) {
+function recentSection(items, csrfToken, selectedActivityKey, t, locale, pagination) {
   if (!items.length) return '';
-  return `<section class="activity-manager-section"><div class="activity-manager-section-heading"><h2>${escapeHtml(t('completed'))} <small>${items.length}</small></h2></div><div class="activity-manager-list">${items.map((item) => renderRow(item, { csrfToken, selectedActivityKey, t, locale })).join('')}</div></section>`;
+  const pager = pagination.total > 50 ? `<nav class="activity-pagination" aria-label="${escapeHtml(t('history_pages'))}">${pagination.page > 1 ? `<a href="/activity?page=${pagination.page - 1}">${escapeHtml(t('previous'))}</a>` : ''}<span>${pagination.start + 1}–${pagination.start + items.length} / ${pagination.total}</span>${pagination.start + items.length < pagination.total ? `<a href="/activity?page=${pagination.page + 1}">${escapeHtml(t('next'))}</a>` : ''}</nav>` : '';
+  return `<section class="activity-manager-section"><div class="activity-manager-section-heading"><h2>${escapeHtml(t('completed'))} <small>${pagination.total}</small></h2>${pager}</div><div class="activity-manager-list">${items.map((item) => renderRow(item, { csrfToken, selectedActivityKey, t, locale })).join('')}</div></section>`;
 }
 
 export function renderActivityFragment(model, options = {}) {
   const t = (key) => translateUi(options.locale, `activity.${key}`, options.languageCatalog);
-  const current = model.current_activity ?? [];
-  const recent = model.recent_work ?? [];
+  const storedCurrent = model.current_activity ?? [];
+  const current = storedCurrent.filter(item => !['failed', 'interrupted'].includes(item.status));
+  const attention = storedCurrent.filter(item => ['failed', 'interrupted'].includes(item.status));
+  const history = [...(model.recent_work ?? [])].sort((a,b) => String(b.updated_at ?? b.last_continued_at ?? b.inspected_at ?? '').localeCompare(String(a.updated_at ?? a.last_continued_at ?? a.inspected_at ?? '')));
+  const selectedIndex = history.findIndex(item => String(item.activity_id ?? item.work_id) === model.selected_activity_key);
+  const requested = model.history_page == null && selectedIndex >= 0 ? Math.floor(selectedIndex / 50) + 1 : Number(model.history_page);
+  const page = Math.min(Math.max(1, Number.isSafeInteger(requested) ? requested : 1), Math.max(1, Math.ceil(history.length / 50)));
+  const start = (page - 1) * 50;
+  const recent = history.slice(start, start + 50);
   const emptyStatus = current.length ? '' : currentSection(current, options.csrfToken, model.selected_activity_key, t, options.locale);
   const activeSection = current.length ? currentSection(current, options.csrfToken, model.selected_activity_key, t, options.locale) : '';
-  return `<section class="activity-manager" data-activity-live data-events-href="/activity/events" data-fragment-href="/activity/fragment" data-connection-lost="${escapeHtml(t('connection_lost'))}" data-connection-live="${escapeHtml(t('connection_live'))}" data-connection-poll="${escapeHtml(t('connection_poll'))}"${model.selected_activity_key ? ` data-selected-activity="${escapeHtml(model.selected_activity_key)}"` : ''}${model.import_status_href ? ` data-import-status-href="${escapeHtml(model.import_status_href)}"` : ''}><div class="activity-manager-toolbar"><button type="button" class="activity-monitor-trigger" data-activity-current-open aria-expanded="false" aria-controls="activity-current-monitor">${escapeHtml(t('current_window'))} · ${current.length}</button>${emptyStatus}<p class="activity-manager-connection" aria-live="polite">${escapeHtml(t('connection'))}</p></div>${model.current_activity_error ? `<p class="callout warn" data-activity-current-error>${escapeHtml(t('current_error'))}</p>` : ''}${activeSection}${model.recent_work_error ? `<p class="callout warn">${escapeHtml(t('recent_error'))}</p>` : ''}${recentSection(recent, options.csrfToken, model.selected_activity_key, t, options.locale)}</section>`;
+  const attentionSection = attention.length ? `<section class="activity-manager-section" data-activity-attention><div class="activity-manager-section-heading"><h2>${escapeHtml(t('attention'))} <small>${attention.length}</small></h2></div><div class="activity-manager-list">${attention.map(item => renderRow(item, { current: true, csrfToken: options.csrfToken, selectedActivityKey: model.selected_activity_key, t, locale: options.locale })).join('')}</div></section>` : '';
+  return `<section class="activity-manager" data-activity-live data-history-page="${page}" data-events-href="/activity/events" data-fragment-href="/activity/fragment" data-connection-lost="${escapeHtml(t('connection_lost'))}" data-connection-live="${escapeHtml(t('connection_live'))}" data-connection-poll="${escapeHtml(t('connection_poll'))}"${model.selected_activity_key ? ` data-selected-activity="${escapeHtml(model.selected_activity_key)}"` : ''}${model.import_status_href ? ` data-import-status-href="${escapeHtml(model.import_status_href)}"` : ''}><div class="activity-manager-toolbar"><button type="button" class="activity-monitor-trigger" data-activity-current-open aria-expanded="false" aria-controls="activity-current-monitor">${escapeHtml(t('current_window'))} · ${current.length}</button>${emptyStatus}<p class="activity-manager-connection" aria-live="polite">${escapeHtml(t('connection'))}</p></div>${model.current_activity_error ? `<p class="callout warn" data-activity-current-error>${escapeHtml(t('current_error'))}</p>` : ''}${activeSection}${attentionSection}${model.recent_work_error ? `<p class="callout warn">${escapeHtml(t('recent_error'))}</p>` : ''}${recentSection(recent, options.csrfToken, model.selected_activity_key, t, options.locale, {page,start,total:history.length})}</section>`;
 }
 
 export function renderActivityView(model, options = {}) {

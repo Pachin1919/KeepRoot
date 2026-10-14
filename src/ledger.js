@@ -1911,10 +1911,16 @@ export class Ledger {
     `).all().map((row) => this.#resolveBlobPath(row.blob_path, row.content_hash));
   }
 
-  diagnostics() {
+  diagnostics({ integrityCheck = 'full' } = {}) {
+    if (!['full', 'quick'].includes(integrityCheck)) {
+      throw new Error('Ledger integrity check must be full or quick.');
+    }
     const schemaVersion = this.db.prepare('PRAGMA user_version').get().user_version;
-    const integrityRows = this.db.prepare('PRAGMA integrity_check').all();
-    const integrityMessages = integrityRows.map((row) => row.integrity_check);
+    // Startup still checks database structure. Doctor additionally checks UNIQUE
+    // constraints and index/table consistency with the full integrity check.
+    const pragma = integrityCheck === 'quick' ? 'quick_check' : 'integrity_check';
+    const integrityRows = this.db.prepare(`PRAGMA ${pragma}`).all();
+    const integrityMessages = integrityRows.map((row) => row[pragma]);
     const journalMode = this.db.prepare('PRAGMA journal_mode').get().journal_mode;
     const backupDir = path.join(this.stateDir, 'backups');
     const migrationBackups = fs.existsSync(backupDir)
@@ -1925,6 +1931,7 @@ export class Ledger {
       schema_version: schemaVersion,
       supported_schema_version: LATEST_SCHEMA_VERSION,
       journal_mode: journalMode,
+      integrity_check: integrityCheck,
       integrity: integrityMessages.length === 1 && integrityMessages[0] === 'ok' ? 'ok' : 'failed',
       integrity_messages: integrityMessages,
       migration_backups: migrationBackups,

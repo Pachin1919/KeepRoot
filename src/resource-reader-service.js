@@ -9,6 +9,7 @@ import { readTableBytes } from './table-reader.js';
 import { assertRecoveryWritable, assertDocumentUpdatesSettled } from './storage/recovery-write-guard.js';
 
 const TEXT_LIMIT = 256 * 1024;
+const TEXT_PAGE_BYTES = 64 * 1024;
 const IMAGE_LIMIT = 8 * 1024 * 1024;
 const PDF_LIMIT = 20 * 1024 * 1024;
 const IMAGE_TYPES = new Map([['.png', 'image/png'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.webp', 'image/webp'], ['.gif', 'image/gif']]);
@@ -38,6 +39,34 @@ function conflict(message) { const error = new Error(message); error.code = 'ATL
 function same(a, b) {
   return a.isFile() && b.isFile() && !a.isSymbolicLink() && !b.isSymbolicLink()
     && a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
+}
+function textVersion(projectId, resourceId, file, stat) {
+  return crypto.createHash('sha256').update(JSON.stringify([
+    projectId, resourceId, file, stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs,
+  ])).digest('hex');
+}
+function readTextPage(fd, stat, offset) {
+  // The lookahead byte identifies a split UTF-8 sequence without reading the file body.
+  const buffer = Buffer.alloc(Math.min(TEXT_PAGE_BYTES + 1, stat.size - offset));
+  let count = 0;
+  while (count < buffer.length) {
+    const n = fs.readSync(fd, buffer, count, buffer.length - count, offset + count);
+    if (!n) break;
+    count += n;
+  }
+  if (count !== buffer.length) throw conflict('The Resource changed during reading. Reopen the Resource.');
+  let end = Math.min(TEXT_PAGE_BYTES, count);
+  if (offset + end < stat.size) {
+    while (end > 0 && (buffer[end] & 0xc0) === 0x80) end--;
+    // Prefer a complete line when it does not produce a tiny page.
+    const newline = buffer.subarray(0, end).lastIndexOf(10);
+    if (newline >= TEXT_PAGE_BYTES / 2) end = newline + 1;
+  }
+  const bytes = buffer.subarray(0, end);
+  try {
+    if (bytes.includes(0)) throw new Error('Binary text');
+    return { text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes), end: offset + end };
+  } catch { throw conflict('The Resource is not valid UTF-8 text. Save it as UTF-8, then retry.'); }
 }
 function dimensions(width, height) {
   if (!width || !height || width > 50_000 || height > 50_000 || width * height > 100_000_000) {
@@ -116,7 +145,7 @@ export function createResourceReaderService({ registry, resourceControl, install
       const checked = contentFilePath(projectPath(root, relativePath));
       const extension = path.extname(checked).toLowerCase();
       const limit = IMAGE_TYPES.has(extension) ? IMAGE_LIMIT : ['.pdf', '.docx', '.csv', '.tsv', '.xlsx'].includes(extension) ? PDF_LIMIT
-        : ['.md', '.markdown', '.txt'].includes(extension) ? TEXT_LIMIT : null;
+        : ['.md', '.markdown', '.txt'].includes(extension) ? Infinity : null;
       if (limit == null) throw conflict('This format does not have an embedded reader.');
       if (fs.lstatSync(checked).size > limit) throw conflict(`Resource exceeds the ${limit} byte reader limit. Choose a smaller file.`);
       const prior = resourceControl.ledger.resources.byPath(checked);
@@ -136,9 +165,10 @@ export function createResourceReaderService({ registry, resourceControl, install
       return { project_id: projectId, resource_id: observed.resource_id, sha256: observed.evidence.sha256,
         relative_path: path.relative(root, checked).replaceAll('\\', '/') };
     },
-    resolveLinks({ projectId, resourceId, expectedSha256, targets }) {
-      if (!/^[a-f0-9]{64}$/u.test(expectedSha256 ?? '') || !Array.isArray(targets) || targets.length > 100) throw conflict('Reader links require a current source version and at most 100 targets.');
-      const source = this.read({ projectId, resourceId, expectedSha256 });
+    resolveLinks({ projectId, resourceId, expectedSha256, targets, textOffset = 0, expectedTextVersion = null }) {
+      if (!(expectedTextVersion != null ? /^[a-f0-9]{64}$/u.test(expectedTextVersion) : /^[a-f0-9]{64}$/u.test(expectedSha256 ?? ''))
+        || !Array.isArray(targets) || targets.length > 100) throw conflict('Reader links require a current source version and at most 100 targets.');
+      const source = this.read({ projectId, resourceId, expectedSha256, textOffset, expectedTextVersion });
       if (source.kind !== 'markdown') throw conflict('Reader links require Markdown.');
       const observed = new Set(readerLinkTokens(source.text).map(item => JSON.stringify(item)));
       const sourceFact = current(projectId, resourceId); const root = sourceFact.detail.location;
@@ -189,12 +219,39 @@ export function createResourceReaderService({ registry, resourceControl, install
       const { pdf_bytes: data, ...metadata } = result;
       return { ...metadata, data };
     },
-    read({ projectId, resourceId, expectedSha256 = null, includePdfBytes = false, tableSheet = null, tableOffset = 0 }) {
+    read({ projectId, resourceId, expectedSha256 = null, includePdfBytes = false, tableSheet = null, tableOffset = 0, textOffset = 0, expectedTextVersion = null }) {
       const before = current(projectId, resourceId); const extension = path.extname(before.checked).toLowerCase();
       const mime = IMAGE_TYPES.get(extension);
       const kind = extension === '.md' || extension === '.markdown' ? 'markdown' : extension === '.txt' ? 'text' : extension === '.pdf' ? 'pdf' : extension === '.docx' ? 'docx' : ['.csv', '.tsv', '.xlsx'].includes(extension) ? 'table' : mime ? 'image' : 'unsupported';
       const result = { project_id: projectId, resource_id: resourceId, name: path.basename(before.checked),
         relative_path: before.relative.replaceAll('\\','/'), sha256: null, bytes: before.stat.size, kind };
+      if (!Number.isSafeInteger(textOffset) || textOffset < 0) throw conflict('Text page offset must be a non-negative integer. Reopen the Resource.');
+      const pagedText = ['markdown', 'text'].includes(kind) && before.stat.size > TEXT_LIMIT;
+      if (!pagedText && (textOffset !== 0 || expectedTextVersion != null)) throw conflict('The text Resource version changed or does not support paging. Reopen the Resource.');
+      if (pagedText) {
+        const version = textVersion(projectId, resourceId, before.checked, before.stat);
+        if (textOffset > before.stat.size || textOffset > 0 && expectedTextVersion == null
+          || expectedTextVersion != null && expectedTextVersion !== version || expectedSha256 != null) {
+          throw conflict('The text Resource version or page offset changed. Reopen the Resource.');
+        }
+        let fd;
+        try {
+          fd = fs.openSync(before.checked, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+          const opened = fs.fstatSync(fd);
+          if (!same(before.stat, opened)) throw conflict('The Resource changed before reading. Reopen the Resource.');
+          const page = readTextPage(fd, opened, textOffset);
+          const afterFd = fs.fstatSync(fd); const afterPath = current(projectId, resourceId);
+          if (!same(opened, afterFd) || afterPath.checked !== before.checked || !same(opened, afterPath.stat)) {
+            throw conflict('The Resource changed during reading. Reopen the Resource.');
+          }
+          result.text = page.text;
+          result.text_page = { offset: textOffset, next_offset: page.end, has_more: page.end < opened.size, total_bytes: opened.size, version };
+          return result;
+        } catch (error) {
+          if (error.code === 'ATLAS_STATE_CONFLICT') throw error;
+          throw conflict('The Resource could not be read. Restore or relink it in Resources, then retry.');
+        } finally { if (fd !== undefined) fs.closeSync(fd); }
+      }
       if (kind === 'unsupported') {
         if (expectedSha256 != null) throw conflict('This format does not support reader version verification. Choose a Markdown, text, or supported image Resource.');
         const after = current(projectId, resourceId);

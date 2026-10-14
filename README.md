@@ -8,6 +8,27 @@ Current version: **2.0.0-preview.1**. This is preview source, not a stable relea
 
 The October 13 candidate adds CLI registration for an explicitly authorized existing directory, without a native picker or manual IDs. An isolated installed workflow completed registration, reading, Save, UI readback of the same Resource and reopening; Markdown editing, confirmation and Undo were also exercised. All 41 previously retained checks passed a focused independent run. The milestone evidence is segmented: the initial full run reached its time budget, five diagnosed failures passed targeted repairs, and the previously unstarted tail passed. This is not a claim of one green full-suite run or a stable release.
 
+The October 14 checkpoint changes ordinary browsing to current-folder loading and recorded metadata, defers relationship/source details, and pages large UTF-8 Markdown/text at about 64 KiB. Manual editing retains its 256 KiB limit. Gemini public-share text capture uses a bounded public RPC and Python parser. An installed isolated Toolbox workflow completed preview, Save verification and same-Resource reading. Native sustained performance and real-user acceptance remain open.
+
+The full source baseline for this checkpoint finished with **1,081 passed, 39 failed and 1 skipped**. Failures include outdated assertions, a missing PDF dependency, temporary-directory cleanup and unresolved UI/state checks. In particular, the relationship canvas can label an unchecked source chain as Fresh; that label does not prove current file verification. This checkpoint is not a green release candidate.
+
+## Windows: first installation and updates
+
+The Windows installation entries are implemented in this source tree. A public Windows Release asset still needs to be published; GitHub's automatically generated **Source code** ZIP is not the installation package.
+
+第一次安装：
+
+1. 准备 [Node.js 24+](https://nodejs.org/en/download) 和 [Python 3.11+](https://www.python.org/downloads/windows/)；Python 安装时勾选“Add Python to PATH”。已有符合要求的版本可以直接使用。
+2. 在 [Keeproot Releases](https://github.com/Pachin1919/keeproot/releases) 下载 `keeproot-windows-…zip`，完整解压。
+3. 双击 `Install-Keeproot.cmd`。它检测解释器、检查包内文件、安装 Runtime 和主 Skill，并安装 Desktop 处理组件。首次组件安装需要联网下载 Python 依赖。
+4. 安装成功后打开 Keeproot；以后从 Windows 开始菜单打开。Codex 的 Skill 入口是 `$keeproot`。
+
+更新：先关闭 Keeproot，下载并解压新的 Windows Release 包，双击其中的 `Update-Keeproot.cmd`。它更新原安装，沿用原来的 Skill 位置，保留项目登记、设置、保存记录及恢复状态。不要删除旧安装目录或复制覆盖 state。更新失败会显示失败步骤和原因；不要把失败当作已经更新。
+
+默认安装目录为 `%LOCALAPPDATA%\Atlas`，这是兼容旧安装的技术路径；程序显示名为 Keeproot。缺少解释器时安装会停止并给出官方下载地址；当前包不包含 Node/Python，不是零前置安装。跨机器首次使用和原生窗口仍需要实际验收。
+
+For a source checkout, use the existing installer below. Development builds can stage a filtered Windows bundle with `node scripts/release-bundle.js --output <local-output-directory>`; the bundle excludes development diaries, state, caches and test evidence. A staged bundle is not a published Release.
+
 ## Codex entry
 
 The installed Skill is `$keeproot`: it locates and calls the local `atlas` CLI, rather than searching for an MCP tool named `keeproot`. Existing `atlas-file-governance` references remain compatible. Project `AGENTS.md` instructions do not install Hooks; optional events require a reviewed binding and configuration. Skill discovery and an isolated PostToolUse configuration were read back from Codex. Actual model-triggered Hook operation remains unverified.
@@ -17,7 +38,7 @@ The installed Skill is `$keeproot`: it locates and calls the local `atlas` CLI, 
 - Preview and register an explicitly authorized existing Project directory through `project register prepare/show/execute/recover`; preserve files in place and reuse returned identities.
 - Browse and read Markdown, text, images, PDF, DOCX and CSV/XLSX in the workspace.
 - Open Toolbox in the left navigation, select CSV/XLSX materials, and enter a Python table recipe: align, combine, filter, convert types, deduplicate and sort; preview and save the full result.
-- In Toolbox → Content conversion, turn a supported static public URL into a real `.md` file: choose an existing folder, preview, explicitly Save, then read. Source JSON and conversation export capture remain separate options.
+- In Toolbox → Content conversion, turn a static public page or supported ChatGPT/Gemini share into a real `.md` file: choose an existing folder, preview, explicitly Save, then read. Source JSON and conversation export capture remain separate options.
 - Edit Markdown or text alongside reading: preview changes, explicitly save to the same Resource, or Undo the edit. Editing does not launch an AI session.
 - Use the fixed document-and-monitors layout, or switch to four panels while retaining the same editor and relationship canvas. Optional motion follows both system and app reduced-motion preferences.
 - In Stages and recovery, inspect a local project's supported Git history, changed files and side-by-side diff. This view is read-only and does not provide Git rollback.

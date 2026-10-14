@@ -354,7 +354,7 @@ function settingsReturnHref(value, allowDemo = false) {
 }
 
 function errorView(message, workspaceHref = '/projects') {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Atlas stopped</title><style>${uiStyles()}</style><script src="/ui.js" defer></script></head><body><div class="app-shell">${renderNav('Projects', { interactive: true, workspaceHref })}<main class="page"><section class="surface"><h1>Atlas stopped this action</h1><p>${escapeHtml(message)}</p><p><a class="text-link" href="${escapeHtml(workspaceHref)}">Return to Projects</a></p></section></main></div></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Keeproot stopped</title><style>${uiStyles()}</style><script src="/ui.js" defer></script></head><body><div class="app-shell">${renderNav('Projects', { interactive: true, workspaceHref })}<main class="page"><section class="surface"><h1>Keeproot stopped this action</h1><p>${escapeHtml(message)}</p><p><a class="text-link" href="${escapeHtml(workspaceHref)}">Return to Projects</a></p></section></main></div></body></html>`;
 }
 
 export async function startAtlasUiServer({
@@ -710,23 +710,24 @@ export async function startAtlasUiServer({
     } catch {
       return { projects: [], error: 'Atlas could not read the Project registry. Your local folders were not changed.' };
     }
+    const savedStates = savedWork.stateForProjects(projects.map(project => project.id));
     const entries = projects.map((project) => {
       const recentItems = recentState.items;
       const work = recentItems.filter((item) => item.project?.id === project.id);
-      const savedState = savedWork.stateForProject(project.id);
+      const savedState = savedStates.get(project.id);
       const candidates = [
         ...work.map((item) => ({
           name: path.basename(item.file_path),
           file_path: item.file_path,
           happened_at: [item.inspected_at, item.last_continued_at].filter(Boolean).sort().at(-1),
-          actor: item.initiated_by?.channel === 'host' ? item.initiated_by.agent || 'Execution Host' : 'Atlas Desktop',
+          actor: item.initiated_by?.channel === 'host' ? item.initiated_by.agent || 'Execution Host' : 'Keeproot Desktop',
           action: 'read',
         })),
         ...savedState.items.map((item) => ({
           name: path.basename(item.result_path),
           file_path: item.result_path,
           happened_at: item.created_at,
-          actor: 'Atlas',
+          actor: 'Keeproot',
           action: 'saved',
         })),
       ].filter((item) => item.happened_at).sort((left, right) => String(right.happened_at).localeCompare(String(left.happened_at)));
@@ -791,7 +792,7 @@ export async function startAtlasUiServer({
     if (extra.module_continue?.project_id) {
       try { entry = projectEntry(extra.module_continue.project_id); } catch { /* Retain the failed draft without offering unavailable resources. */ }
     }
-    const localResources = entry && resourceControl ? resourceControl.projectResources(entry.project.id)
+    const localResources = entry && resourceControl ? resourceControl.projectResourceSummaries(entry.project.id)
       .filter(fact => fact.status === 'active' && fact.relationship_to_project === 'stored_in'
         && fact.last_known_location?.project_id === entry.project.id && fact.path
         && path.extname(fact.path).toLowerCase() === '.txt' && isPathInside(entry.root, fact.path))
@@ -912,9 +913,9 @@ export async function startAtlasUiServer({
     const savedState = savedWork.stateForProject(entry.project.id);
     let resourceFacts = [];
     let readError = storedHomeState.error ?? savedState.error ?? null;
-    try { resourceFacts = resourceControl.projectResources(entry.project.id); } catch (error) { readError ??= new Error(safeNotice(error)); }
+    try { resourceFacts = resourceControl.projectResourceSummaries(entry.project.id); } catch (error) { readError ??= new Error(safeNotice(error)); }
     let hasProjectFiles = false;
-    try { hasProjectFiles = searchProjectFiles(entry.root, '').items.length > 0; } catch (error) { readError ??= new Error(safeNotice(error)); }
+    try { hasProjectFiles = browseProjectFiles(entry.root).items.length > 0; } catch (error) { readError ??= new Error(safeNotice(error)); }
     let workSessions = [];
     try { workSessions = dataWork.openProjectSessions(entry.project); } catch (error) { readError ??= new Error(safeNotice(error)); }
     let handoffList = { handoffs: [] };
@@ -929,7 +930,7 @@ export async function startAtlasUiServer({
       savedWork: savedState.items,
       savedViews: projectViews?.listViews(entry.project.id).views ?? [],
       currentActivity: readCurrentActivityState(stateDir).items,
-      hasProjectFiles,
+      hasProjectFiles, metadataOnly: true,
     }), capture_module_enabled: moduleAvailability.get('atlas.capture-source').enabled,
       handoffs: handoffList.handoffs, handoff_work_sessions: workSessions.map((item) => ({ session_id: item.session_id, revision: item.revision, intent: item.intent, source_ids: item.sources.map((source) => source.resource_id) })),
       handoff_save_options: savedState.items.filter((item) => item.save_id && item.status === 'executed').slice(0, 20).map((item) => ({ save_id: item.save_id, name: path.basename(item.result_path ?? item.save_id), created_at: item.created_at })) };
@@ -984,7 +985,7 @@ export async function startAtlasUiServer({
       return null;
     }
   };
-  const activityModel = (selectedActivityKey = null, importId = null) => {
+  const activityModel = (selectedActivityKey = null, importId = null, historyPage = null) => {
     const current = readCurrentActivityState(stateDir);
     const recent = recentWorkModel();
     const saves = savedWork.activityItems();
@@ -998,11 +999,12 @@ export async function startAtlasUiServer({
       current_activity: current.items.map((item) => ({ ...item, resource_href: activityResourceHref(item) })),
       current_activity_error: Boolean(current.error),
       selected_activity_key: selectedActivityKey,
+      history_page: historyPage,
       import_status_href: /^BIM-[a-f0-9]{32}$/u.test(importId ?? '') ? `/activity/import-status?import_id=${encodeURIComponent(importId)}` : null,
     };
   };
-  const renderActivity = (response, statusCode = 200, selectedActivityKey = null, importId = null) => {
-    sendPage(response, statusCode, renderActivityView(activityModel(selectedActivityKey, importId), {
+  const renderActivity = (response, statusCode = 200, selectedActivityKey = null, importId = null, historyPage = null) => {
+    sendPage(response, statusCode, renderActivityView(activityModel(selectedActivityKey, importId, historyPage), {
       csrfToken,
       workspaceHref: '/projects',
       ...displayOptions(),
@@ -1459,7 +1461,7 @@ export async function startAtlasUiServer({
         return;
       }
       if (url.pathname === '/activity' && request.method === 'GET') {
-        renderActivity(response, 200, url.searchParams.get('selected'), url.searchParams.get('import'));
+        renderActivity(response, 200, url.searchParams.get('selected'), url.searchParams.get('import'), url.searchParams.get('page'));
         return;
       }
       if (url.pathname === '/activity/import-status' && request.method === 'GET') {
@@ -1472,7 +1474,7 @@ export async function startAtlasUiServer({
         return;
       }
       if (url.pathname === '/activity/fragment' && request.method === 'GET') {
-        sendHtml(response, 200, renderActivityFragment(activityModel(url.searchParams.get('selected')), { csrfToken, ...displayOptions() }), { desktopBridge: desktopPickerEnabled });
+        sendHtml(response, 200, renderActivityFragment(activityModel(url.searchParams.get('selected'), null, url.searchParams.get('page')), { csrfToken, ...displayOptions() }), { desktopBridge: desktopPickerEnabled });
         return;
       }
       if (url.pathname === '/activity/events' && request.method === 'GET') {
@@ -2756,7 +2758,7 @@ export async function startAtlasUiServer({
             return [{ id: project.id, name: project.name, href: `/projects/${encodeURIComponent(project.id)}/document-updates/repair?${new URLSearchParams(source)}` }];
           });
           // Listing uses registered location metadata only. No document content is inspected before explicit selection.
-          resources = resourceControl.projectResources(projectId).flatMap(fact => {
+          resources = resourceControl.projectResourceSummaries(projectId).flatMap(fact => {
             const location = fact.locations?.find(item => item.project_id === projectId && item.status === 'active');
             if (!location || !/\.md$/iu.test(location.path)) return [];
             const relativePath = path.relative(entry.root, location.path);
@@ -2947,7 +2949,7 @@ export async function startAtlasUiServer({
         const returnHref = readerReturnHref(entry,form.get('return_to'));
         let readHref = entry.base + '/resources/read?' + new URLSearchParams({resource_id:resourceId,return_to:returnHref});
         let readerUpdateId = null;
-        const manualResources = resourceControl.projectResources(entry.project.id).flatMap(fact => {
+        const manualResources = resourceControl.projectResourceSummaries(entry.project.id).flatMap(fact => {
           const location=fact.locations?.find(value=>value.project_id===entry.project.id && value.status==='active');
           return location ? [{resource_id:fact.resource_id,name:path.basename(location.path),relative_path:path.relative(entry.root,location.path).replaceAll('\\','/')}] : [];
         });
@@ -3047,6 +3049,7 @@ export async function startAtlasUiServer({
           }
           if (imageRequest && !/^[a-f0-9]{64}$/u.test(expectedSha256 ?? '')) throw new Error('Image preview requires its current version. Reopen the Resource.');
           reader = resourceReader.read({ projectId, resourceId, expectedSha256,
+            textOffset: Number(url.searchParams.get('text_offset') ?? 0), expectedTextVersion: url.searchParams.get('text_version'),
             tableSheet: url.searchParams.get('sheet'), tableOffset: Number(url.searchParams.get('offset') ?? 0) });
           if (imageRequest) {
             if (reader.kind !== 'image') throw new Error('This Resource is not an image.');
@@ -3069,9 +3072,13 @@ export async function startAtlasUiServer({
         }
         const readerRoot = readerProjectDetail.location?.root_path && readerProjectDetail.location.relative_path != null
           ? path.resolve(readerProjectDetail.location.root_path, readerProjectDetail.location.relative_path) : null;
-        const resources = (readerRoot ? resourceControl.projectResources(projectId) : []).filter(fact =>
+        const loadSourceContext = url.searchParams.get('source') === '1' || url.searchParams.get('graph') === '1' || url.searchParams.has('relation_depth') || url.searchParams.has('relation_status');
+        const readerSummaries = readerRoot ? resourceControl.projectResourceSummaries(projectId) : [];
+        const focusedSummary = readerSummaries.find(fact => fact.resource_id === resourceId);
+        const knownExternalChange = Boolean((reader.sha256 && focusedSummary?.content_hash && reader.sha256 !== focusedSummary.content_hash) || projectHome.project(projectId).check?.changed_resources?.some(item => item.resource_id === resourceId && (!item.baseline_version || item.baseline_version === focusedSummary?.content_hash)));
+        const resources = readerSummaries.filter(fact =>
           fact.locations?.some(location => location.project_id === projectId && location.status === 'active'))
-          .map(fact => {
+          .slice(0, 150).map(fact => {
             const location = fact.locations.find(item => item.project_id === projectId && item.status === 'active');
             return { resource_id: fact.resource_id, name: path.basename(location.path), relative_path: path.relative(readerRoot, location.path).replaceAll('\\', '/'),
               href: `${base}/resources/read?resource_id=${encodeURIComponent(fact.resource_id)}&return_to=${encodeURIComponent(returnHref)}` };
@@ -3083,10 +3090,10 @@ export async function startAtlasUiServer({
             try {
               const { readerLinkTokens } = await import('./resource-reader-service.js');
               const targets = [...new Map(readerLinkTokens(reader.text).map(item => [JSON.stringify(item), item])).values()].slice(0, 100);
-              links = resourceReader.resolveLinks({ projectId, resourceId, expectedSha256: reader.sha256, targets });
+              links = resourceReader.resolveLinks({ projectId, resourceId, expectedSha256: reader.sha256, textOffset: reader.text_page?.offset ?? 0, expectedTextVersion: reader.text_page?.version ?? null, targets });
             } catch (error) { status = 409; notice = safeNotice(error); }
           }
-          if (!notice) {
+          if (!notice && loadSourceContext) {
             try { relationships = resourceControl.relationshipFocus(projectId, resourceId, { depth: url.searchParams.get('relation_depth') === '2' ? 2 : 1, status: ['active','removed','all'].includes(url.searchParams.get('relation_status')) ? url.searchParams.get('relation_status') : 'active' }); }
             catch (error) { relationshipNotice = safeNotice(error); }
           }
@@ -3100,9 +3107,9 @@ export async function startAtlasUiServer({
         const workSessions = dataWork.openProjectSessions(project);
         const relatedWorks=workSessions.filter(work => work.sources?.some(source=>source.resource_id===resourceId));
         let resourceFocusGraph = null; let sourceContext = null;
-        if (readerRoot) {
+        if (readerRoot && loadSourceContext) {
           try {
-            const fact = resourceControl.projectResource(projectId, resourceId, { refresh: true });
+            const fact = resourceControl.projectResource(projectId, resourceId);
             if (!reader.relative_path) {
               // A rejected content preview must not hide verified metadata.
               // Derive only from this Project's unique recorded location;
@@ -3130,7 +3137,7 @@ export async function startAtlasUiServer({
             if (relationships) resourceFocusGraph = buildResourceFocusGraph({projectId,resource:sourceContext.focused_resource,relationshipFocus:relationships,workSessions,savedWork:savedState.items});
           } catch(error) { relationshipNotice ??= safeNotice(error); }
         }
-        sendPage(response, status, renderResourceReaderView({ project, reader, resources, returnHref, detailsHref, notice, links, relationships, relationshipNotice, relatedWorks, resourceFocusGraph, sourceContext, graphMode: url.searchParams.get('graph') === '1', handoffRequestKey: 'reader-handoff:' + crypto.randomUUID(), manualUpdate, ...readerMonitorModel(projectId,resourceId,Boolean(notice)) }, { csrfToken, ...displayOptions() }));
+        sendPage(response, status, renderResourceReaderView({ project, reader, resources, returnHref, detailsHref, notice, links, relationships, relationshipNotice, relatedWorks, resourceFocusGraph, sourceContext, graphMode: url.searchParams.get('graph') === '1', handoffRequestKey: 'reader-handoff:' + crypto.randomUUID(), manualUpdate, knownExternalChange, textHistory: (url.searchParams.get('text_history') ?? '').split(',').filter(value => /^\d{1,16}$/u.test(value)).slice(-100).map(Number), sourceContextLoaded: loadSourceContext, editUnavailable: reader.text_page ? 'Large files are read in pages. Open the file externally to edit.' : null, ...readerMonitorModel(projectId,resourceId,Boolean(notice)) }, { csrfToken, ...displayOptions() }));
         return;
       }
       const projectResourcesMatch = url.pathname.match(/^\/projects\/([^/]+)\/resources(?:\/(detail))?$/u);
@@ -3142,22 +3149,13 @@ export async function startAtlasUiServer({
         const savedState = savedWork.stateForProject(entry.project.id);
         const workSessions = dataWork.openProjectSessions(entry.project);
         const projectNames = new Map(registry.list().map((project) => [project.id, project.name]));
-        const resourceFacts = resourceControl.projectResources(entry.project.id, { refresh: true }).map((fact) => {
-          const hasActiveProjectLocation = fact.locations?.some((location) => location.project_id === entry.project.id && location.status === 'active');
-          return {
-            ...fact,
-            relationships: (fact.relationships ?? []).map((relationship) => relationship.target_kind === 'project'
-              ? { ...relationship, target_name: projectNames.get(relationship.target_id) ?? relationship.target_id }
-              : relationship),
-            linked_relationships: hasActiveProjectLocation
-              ? resourceControl.linkedResourceRelationships(entry.project.id, fact.resource_id).map((relationship) => ({
-                ...relationship,
-                source_href: `${entry.base}/resources?resource_id=${encodeURIComponent(relationship.source_resource_id)}`,
-                target_href: `${entry.base}/resources?resource_id=${encodeURIComponent(relationship.target_id)}`,
-              }))
-              : [],
-          };
-        });
+        const resourceFacts = resourceControl.projectResourceSummaries(entry.project.id);
+        const focusedId = url.searchParams.get('resource_id') || resourceFacts.find(fact => fact.path && url.searchParams.get('path') && path.resolve(entry.root, url.searchParams.get('path')) === path.resolve(fact.path))?.resource_id;
+        if (focusedId) {
+          const detail = resourceControl.projectResource(entry.project.id, focusedId);
+          const index = resourceFacts.findIndex(fact => fact.resource_id === focusedId);
+          if (index >= 0) resourceFacts[index] = detail;
+        }
         if (resourceAction === 'detail') {
           if (savedState.error) {
             renderProjectResources(response, buildProjectResourcesModel({
@@ -3194,13 +3192,13 @@ export async function startAtlasUiServer({
         });
         resourcesModel.graph_mode = url.searchParams.get('graph') === '1';
         resourcesModel.graph_return_href = url.pathname + url.search;
-        resourcesModel.link_suggestions=resourceControl.listLinkedResourceSuggestions(entry.project.id);
+        resourcesModel.link_suggestions=resourcesModel.graph_mode ? resourceControl.listLinkedResourceSuggestions(entry.project.id) : [];
         const pinnedResourceIds = new Set(projectHome.project(entry.project.id).pinned.filter((item) => item.kind === 'resource').map((item) => item.id));
         if (resourcesModel.focused_resource) {
           resourcesModel.focused_resource.pinned = resourcesModel.focused_resource.resource_id ? pinnedResourceIds.has(resourcesModel.focused_resource.resource_id) : false;
           resourcesModel.focused_resource.board_references = resourcesModel.focused_resource.resource_id && boards
             ? boards.listResourceReferences(entry.project.id, resourcesModel.focused_resource.resource_id) : [];
-          if (resourcesModel.focused_resource.resource_id
+          if ((resourcesModel.graph_mode || url.searchParams.has('relation_depth') || url.searchParams.has('relation_status')) && resourcesModel.focused_resource.resource_id
             && resourceControl.ledger.resources.activeLocationsForResourceInProject(resourcesModel.focused_resource.resource_id, entry.project.id).length) {
             const requestedDepth = url.searchParams.has('relation_depth') ? Number(url.searchParams.get('relation_depth')) : 1;
             const requestedStatus = url.searchParams.get('relation_status') ?? 'active';
@@ -4836,7 +4834,7 @@ export async function startAtlasUiServer({
           response.end('Atlas UI session token is invalid.');
           return;
         }
-        sendPage(response, 200, '<!doctype html><html><head><meta charset="utf-8"><title>Atlas stopped</title></head><body><main><h1>Atlas stopped</h1><p>You can close this tab.</p></main></body></html>');
+        sendPage(response, 200, '<!doctype html><html><head><meta charset="utf-8"><title>Keeproot stopped</title></head><body><main><h1>Keeproot stopped</h1><p>You can close this tab.</p></main></body></html>');
         setImmediate(() => server.close());
         return;
       }

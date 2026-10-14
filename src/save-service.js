@@ -9,9 +9,11 @@ import { projectResourceHref } from './resource-links.js';
 import { assertRecoveryWritable } from './storage/recovery-write-guard.js';
 import { verifyChatGptExportInput } from './chatgpt-export-capture.js';
 
-export function activeSavedResourcePath(db, projectId, resourceId, oldPath) {
+export function activeSavedResourcePath(db, projectId, resourceId, oldPath, locationsByResource = null) {
   if (resourceId) {
-    const matches = db.prepare("SELECT path FROM resource_locations WHERE resource_id=? AND project_id=? AND status='active' ORDER BY id").all(resourceId, projectId);
+    const matches = locationsByResource?.has(resourceId)
+      ? locationsByResource.get(resourceId).filter((location) => location.project_id === projectId && location.status === 'active')
+      : db.prepare("SELECT path FROM resource_locations WHERE resource_id=? AND project_id=? AND status='active' ORDER BY id").all(resourceId, projectId);
     return matches.length === 1 ? matches[0].path : oldPath;
   }
   if (!oldPath) return oldPath;
@@ -21,9 +23,11 @@ export function activeSavedResourcePath(db, projectId, resourceId, oldPath) {
   return matches.length === 1 ? matches[0].path : oldPath;
 }
 
-export function currentSavedResourceLocation(db, resourceId) {
+export function currentSavedResourceLocation(db, resourceId, locationsByResource = null) {
   if (!resourceId) return null;
-  const rows = db.prepare("SELECT * FROM resource_locations WHERE resource_id=? AND status='active' ORDER BY id").all(resourceId);
+  const rows = locationsByResource?.has(resourceId)
+    ? locationsByResource.get(resourceId).filter((location) => location.status === 'active')
+    : db.prepare("SELECT * FROM resource_locations WHERE resource_id=? AND status='active' ORDER BY id").all(resourceId);
   return rows.length === 1 ? rows[0] : null;
 }
 
@@ -551,18 +555,46 @@ export class SaveService {
   }
 
   // Read projection only. Original Save, Intake journal and verification receipts stay immutable.
-  projectRecord(row) {
+  projectRecords(rows, { projectIds = null } = {}) {
+    const wanted=projectIds===null ? null : new Set(projectIds);
+    if (!fs.existsSync(path.join(this.stateDir, 'ledger.sqlite'))) return wanted ? rows.filter(row=>wanted.has(row.project?.id)) : rows;
+    this.resourceControl ??= createResourceControl({ stateDir: this.stateDir });
+    const resources = this.resourceControl.ledger.resources;
+    const context = { resourceIds: new Map(), locationsByResource: new Map(), projects: new Map(), projectLocations: new Map() };
+    for (const row of rows) {
+      if (!row?.project?.id) continue;
+      const resourceId = row.resource_id ?? resources.bySave(row.save_id)?.id;
+      context.resourceIds.set(row, resourceId);
+      for (const id of [resourceId, row.source?.resource_id, ...(row.source?.sources ?? []).map((source) => source?.resource_id)]) {
+        if (id) context.locationsByResource.set(id, []);
+      }
+    }
+    for (const location of resources.locationsForResources([...context.locationsByResource.keys()])) {
+      context.locationsByResource.get(location.resource_id).push(location);
+    }
+    // This context belongs to this read only. Later requests must read current locations again.
+    const selected=wanted ? rows.filter(row=>{
+      const resourceId=context.resourceIds.get(row);
+      const location=currentSavedResourceLocation(this.resourceControl.ledger.db,resourceId,context.locationsByResource);
+      return wanted.has(location?.project_id??row.project?.id);
+    }) : rows;
+    return selected.map((row) => this.projectRecord(row, context));
+  }
+
+  projectRecord(row, context = null) {
     if (!row?.project?.id || !fs.existsSync(path.join(this.stateDir, 'ledger.sqlite'))) return row;
     this.resourceControl ??= createResourceControl({ stateDir: this.stateDir });
     const db = this.resourceControl.ledger.db;
-    const resourceId = row.resource_id ?? this.resourceControl.ledger.resources.bySave(row.save_id)?.id;
-    const currentLocation = currentSavedResourceLocation(db, resourceId);
+    const resourceId = context?.resourceIds.has(row) ? context.resourceIds.get(row) : row.resource_id ?? this.resourceControl.ledger.resources.bySave(row.save_id)?.id;
+    const currentLocation = currentSavedResourceLocation(db, resourceId, context?.locationsByResource);
     const projectId = currentLocation?.project_id ?? row.project.id;
-    const project = db.prepare('SELECT * FROM projects WHERE id=?').get(projectId);
-    const projectLocations = db.prepare("SELECT l.relative_path,r.current_path AS root_path FROM project_locations l JOIN portfolio_roots r ON r.id=l.root_id WHERE l.project_id=? AND l.status='active'").all(projectId);
+    if (context && !context.projects.has(projectId)) context.projects.set(projectId, db.prepare('SELECT * FROM projects WHERE id=?').get(projectId));
+    if (context && !context.projectLocations.has(projectId)) context.projectLocations.set(projectId, db.prepare("SELECT l.relative_path,r.current_path AS root_path FROM project_locations l JOIN portfolio_roots r ON r.id=l.root_id WHERE l.project_id=? AND l.status='active'").all(projectId));
+    const project = context ? context.projects.get(projectId) : db.prepare('SELECT * FROM projects WHERE id=?').get(projectId);
+    const projectLocations = context ? context.projectLocations.get(projectId) : db.prepare("SELECT l.relative_path,r.current_path AS root_path FROM project_locations l JOIN portfolio_roots r ON r.id=l.root_id WHERE l.project_id=? AND l.status='active'").all(projectId);
     const projectLocation = projectLocations.length === 1 ? projectLocations[0] : null;
     const projectRoot = projectLocation ? path.resolve(projectLocation.root_path, projectLocation.relative_path) : null;
-    const active = (resourceId, oldPath) => activeSavedResourcePath(db, projectId, resourceId, oldPath);
+    const active = (resourceId, oldPath) => activeSavedResourcePath(db, projectId, resourceId, oldPath, context?.locationsByResource);
     const source = (item) => {
       if (!item) return item;
       const currentPath = active(item.resource_id, item.path);

@@ -45,8 +45,9 @@ foreach ($root in $LibraryRoot) {
 $runtimeExitCode = $LASTEXITCODE
 
 if ($runtimeExitCode -eq 0 -and $DesktopPythonPath -and $Command -in @('install', 'upgrade')) {
-  $atlas = Join-Path $InstallRoot 'atlas.cmd'
-  & $atlas ui install --python $DesktopPythonPath
+  # Component setup does not need to initialize Project, Save or recovery services.
+  $desktopInstaller = Join-Path $projectRoot 'scripts\install-desktop-component.js'
+  & $nodeExecutable $desktopInstaller --install-root $InstallRoot --python $DesktopPythonPath
   $runtimeExitCode = $LASTEXITCODE
 }
 

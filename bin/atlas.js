@@ -3603,7 +3603,13 @@ async function main() {
         if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535) {
           throw new Error('ui accepts an optional --path, --port, --no-open, or --browser.');
         }
-        const diagnostics = tracker.ledger.diagnostics();
+        const diagnostics = tracker.ledger.diagnostics({ integrityCheck: 'quick' });
+        if (diagnostics.integrity !== 'ok') {
+          const error = new Error('Atlas Ledger startup quick check failed. Run atlas doctor for full diagnostics.');
+          error.code = 'ATLAS_LEDGER_INTEGRITY_FAILED';
+          throw error;
+        }
+        const pythonCapability = optionalPythonCapability();
         const { startAtlasUiServer } = await import('../src/ui-server.js');
         const session = await startAtlasUiServer({
           stateDir,
@@ -3618,10 +3624,11 @@ async function main() {
             installation_root: installationRoot,
             ledger: {
               integrity: diagnostics.integrity,
+              integrity_check: diagnostics.integrity_check,
               schema_version: diagnostics.schema_version,
               supported_schema_version: diagnostics.supported_schema_version,
             },
-            python: optionalPythonCapability(),
+            python: pythonCapability,
           },
           intake,
           projectRoot,
@@ -3637,6 +3644,7 @@ async function main() {
               url: session.url,
               installationRoot,
               runtimeRoot: projectRoot,
+              validatedCapability: pythonCapability,
               pickerRegistrationUrl: session.desktop_picker?.registration_url,
               pickerToken: session.desktop_picker?.token,
             });

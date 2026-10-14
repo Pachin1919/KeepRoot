@@ -310,8 +310,12 @@ export async function startDesktopUi({
   configuredPath = process.env.ATLAS_DESKTOP_PYTHON,
   spawnProcess = spawn,
   readyTimeoutMs = 15_000,
+  validatedCapability = null,
 } = {}) {
-  const capability = doctorDesktopUiComponent({ installationRoot, runtimeRoot, configuredPath });
+  // The CLI has already probed this exact capability while assembling runtime
+  // facts. Reuse it for this launch; independent callers still run the doctor.
+  const capability = validatedCapability
+    ?? doctorDesktopUiComponent({ installationRoot, runtimeRoot, configuredPath });
   if (capability.status !== 'ready') {
     const error = new Error(
       capability.next_step
