@@ -13,6 +13,8 @@ const files = [
   new URL('./styles/motion.css', import.meta.url),
 ];
 
+let bundledStyles;
 export function uiStyles() {
-  return files.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
+  // Runtime assets are fixed for this server process; preferences live in HTML.
+  return bundledStyles ??= files.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
 }

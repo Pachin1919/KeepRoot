@@ -251,7 +251,7 @@ function sendHtml(response, statusCode, html, { desktopBridge = false } = {}) {
   response.writeHead(statusCode, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
-    'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'self'${desktopBridge ? " 'unsafe-eval'" : ''}; img-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+    'content-security-policy': `default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'${desktopBridge ? " 'unsafe-eval'" : ''}; img-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
   });
@@ -272,14 +272,21 @@ function redirect(response, location) {
   response.end();
 }
 
-function sendUiClient(response) {
+let uiClientAsset;
+function sendUiClient(request, response) {
+  uiClientAsset ??= fs.readFileSync(new URL('./ui/client.js', import.meta.url));
+  const etag = '"' + crypto.createHash('sha256').update(uiClientAsset).digest('hex') + '"';
+  if (request.headers['if-none-match'] === etag) {
+    response.writeHead(304, {'cache-control': 'no-cache', etag}); response.end(); return;
+  }
   response.writeHead(200, {
     'content-type': 'text/javascript; charset=utf-8',
-    'cache-control': 'no-store',
+    'cache-control': 'no-cache',
+    etag,
     'content-security-policy': "default-src 'none'",
     'x-content-type-options': 'nosniff',
   });
-  response.end(fs.readFileSync(new URL('./ui/client.js', import.meta.url), 'utf8'));
+  response.end(uiClientAsset);
 }
 
 const UI_IMAGE_ASSETS = new Map([
@@ -398,7 +405,12 @@ export async function startAtlasUiServer({
     } catch {}
   }
   runtime = { atlas_version: ATLAS_VERSION, ...runtime, installed_build: build };
-  const sendPage = (response, statusCode, html) => sendHtml(response, statusCode, html, {
+  const stylesheet = uiStyles();
+  const stylesheetHash = crypto.createHash('sha256').update(stylesheet).digest('hex');
+  const stylesheetHref = `/ui/styles/${stylesheetHash}.css`;
+  const stylesheetEtag = `"${stylesheetHash}"`;
+  const sendPage = (response, statusCode, html) => sendHtml(response, statusCode,
+    html.replace(`<style>${stylesheet}</style>`, `<link rel="stylesheet" href="${stylesheetHref}">`), {
     desktopBridge: desktopPickerEnabled,
   });
   const csrfToken = crypto.randomBytes(32).toString('hex');
@@ -862,8 +874,21 @@ export async function startAtlasUiServer({
   };
   const renderToolbox=(response,project,extra={},status=200)=>{
     const resources=[];
-    if(project && resourceControl)for(const fact of resourceControl.projectResources(project.id)){try{resources.push(workSourceFact(projectEntry(project.id),fact.resource_id));}catch{}}
-    const folders=project ? projectImport.projectChoices().find(item=>item.id===project.id && item.available)?.folders ?? []:[];
+    const tool=['pipeline','aggregate','pivot','trend','markdown'].includes(extra.tool) ? extra.tool
+      : Object.hasOwn(extra.markdown ?? {},'url') ? 'markdown' : null;
+    // The catalog needs no material/destination enumeration. A table picker
+    // reads registered metadata once; POST selection retains strict validation.
+    if(project && resourceControl && ['pipeline','aggregate','pivot','trend'].includes(tool) && tableWorkEnabled()){
+      const entry=projectEntry(project.id);
+      for(const fact of resourceControl.projectResourceSummaries(project.id)){
+        const location=fact.locations.find(item=>item.project_id===project.id && item.status==='active');
+        if(!location || !['.csv','.xlsx'].includes(path.extname(location.path).toLowerCase()) || !isPathInside(entry.root,location.path))continue;
+        resources.push({resource_id:fact.resource_id,name:fact.resource?.display_name ?? path.basename(location.path),
+          relative_path:path.relative(entry.root,location.path).replaceAll('\\','/')});
+      }
+    }
+    const folders=project && tool==='markdown' ? projectImport.projectChoices({projectId:project.id})
+      .find(item=>item.id===project.id && item.available)?.folders ?? []:[];
     sendPage(response,status,renderToolboxView({project,projects:activeProjects(),resources,folders,local_modules:localModules.list().map(({module_id,module_version,enabled})=>({module_id,module_version,enabled})),paused:!tableWorkEnabled(),capture_paused:!captureSourceModule || !moduleAvailability.get('atlas.capture-source').enabled,markdown:{request_key:'toolbox-md:'+crypto.randomUUID()},...extra},{csrfToken,...displayOptions()}));
   };
   const toolboxSaveReturn=(record,value)=>{
@@ -1396,7 +1421,17 @@ export async function startAtlasUiServer({
         return;
       }
       if (url.pathname === '/ui.js' && request.method === 'GET') {
-        sendUiClient(response);
+        sendUiClient(request, response);
+        return;
+      }
+      if (url.pathname.startsWith('/ui/styles/')) {
+        if (request.method !== 'GET' || url.search || url.pathname !== stylesheetHref) {
+          response.writeHead(404, {'content-type': 'text/plain; charset=utf-8'}); response.end('Asset unavailable.'); return;
+        }
+        const headers = {'content-type': 'text/css; charset=utf-8', 'cache-control': 'public, max-age=31536000, immutable',
+          etag: stylesheetEtag, 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'"};
+        response.writeHead(request.headers['if-none-match'] === stylesheetEtag ? 304 : 200, headers);
+        response.end(request.headers['if-none-match'] === stylesheetEtag ? undefined : stylesheet);
         return;
       }
       if (url.pathname === '/favicon.ico' && request.method === 'GET') {
@@ -2950,8 +2985,8 @@ export async function startAtlasUiServer({
         let readHref = entry.base + '/resources/read?' + new URLSearchParams({resource_id:resourceId,return_to:returnHref});
         let readerUpdateId = null;
         const manualResources = resourceControl.projectResourceSummaries(entry.project.id).flatMap(fact => {
-          const location=fact.locations?.find(value=>value.project_id===entry.project.id && value.status==='active');
-          return location ? [{resource_id:fact.resource_id,name:path.basename(location.path),relative_path:path.relative(entry.root,location.path).replaceAll('\\','/')}] : [];
+          const location=fact.locations?.find(value=>value.project_id===entry.project.id && ['active','missing'].includes(value.status));
+          return location ? [{resource_id:fact.resource_id,name:path.basename(location.path),relative_path:path.relative(entry.root,location.path).replaceAll('\\','/'),status:location.status,resource_status:fact.resource_status}] : [];
         });
         const manualResource=manualResources.find(value=>value.resource_id===resourceId);
         const renderManual = (manual,notice=null,status=200) => sendPage(response,status,renderResourceReaderView({project:entry.project,
@@ -3077,10 +3112,10 @@ export async function startAtlasUiServer({
         const focusedSummary = readerSummaries.find(fact => fact.resource_id === resourceId);
         const knownExternalChange = Boolean((reader.sha256 && focusedSummary?.content_hash && reader.sha256 !== focusedSummary.content_hash) || projectHome.project(projectId).check?.changed_resources?.some(item => item.resource_id === resourceId && (!item.baseline_version || item.baseline_version === focusedSummary?.content_hash)));
         const resources = readerSummaries.filter(fact =>
-          fact.locations?.some(location => location.project_id === projectId && location.status === 'active'))
+          fact.locations?.some(location => location.project_id === projectId && ['active','missing'].includes(location.status)))
           .slice(0, 150).map(fact => {
-            const location = fact.locations.find(item => item.project_id === projectId && item.status === 'active');
-            return { resource_id: fact.resource_id, name: path.basename(location.path), relative_path: path.relative(readerRoot, location.path).replaceAll('\\', '/'),
+            const location = fact.locations.find(item => item.project_id === projectId && ['active','missing'].includes(item.status));
+            return { resource_id: fact.resource_id, status: location.status, resource_status: fact.resource_status, name: path.basename(location.path), relative_path: path.relative(readerRoot, location.path).replaceAll('\\', '/'),
               href: `${base}/resources/read?resource_id=${encodeURIComponent(fact.resource_id)}&return_to=${encodeURIComponent(returnHref)}` };
           });
         const detailsHref = reader.relative_path ? `${base}/resources/detail?path=${encodeURIComponent(reader.relative_path)}&return_to=${encodeURIComponent(returnHref)}` : returnHref;
@@ -3090,7 +3125,7 @@ export async function startAtlasUiServer({
             try {
               const { readerLinkTokens } = await import('./resource-reader-service.js');
               const targets = [...new Map(readerLinkTokens(reader.text).map(item => [JSON.stringify(item), item])).values()].slice(0, 100);
-              links = resourceReader.resolveLinks({ projectId, resourceId, expectedSha256: reader.sha256, textOffset: reader.text_page?.offset ?? 0, expectedTextVersion: reader.text_page?.version ?? null, targets });
+              if (targets.length) links = resourceReader.resolveLinks({ projectId, resourceId, expectedSha256: reader.sha256, textOffset: reader.text_page?.offset ?? 0, expectedTextVersion: reader.text_page?.version ?? null, targets });
             } catch (error) { status = 409; notice = safeNotice(error); }
           }
           if (!notice && loadSourceContext) {
@@ -3104,7 +3139,7 @@ export async function startAtlasUiServer({
             if (value.resource_id !== resourceId || value.source?.kind !== 'manual_edit') throw new Error('This edit receipt belongs to a different material.'); manualUpdate=value;
           } catch(error) { notice=safeNotice(error); status=409; }
         }
-        const workSessions = dataWork.openProjectSessions(project);
+        const workSessions = loadSourceContext ? dataWork.openProjectSessions(project) : [];
         const relatedWorks=workSessions.filter(work => work.sources?.some(source=>source.resource_id===resourceId));
         let resourceFocusGraph = null; let sourceContext = null;
         if (readerRoot && loadSourceContext) {

@@ -5,6 +5,7 @@ import { escapeHtml, renderNav, renderTopbar, renderUiClientScript } from '../co
 import { uiStyles } from '../styles.js';
 import { normalizeUiLocale, translateUi } from '../i18n.js';
 import { renderMarkdown } from '../../markdown-reader.js';
+import { isReaderFile } from '../../reader-formats.js';
 
 function renderActivityMonitor(snapshot, error, h, label) {
   const states = { running: label('处理中','Running'), waiting: label('等待','Waiting'), failed: label('失败','Failed'), interrupted: label('已中断','Interrupted'), completed: label('已完成','Completed'), inspect: label('检查记录','Inspection record') };
@@ -120,14 +121,19 @@ export function renderResourceReaderView(model, options = {}) {
   const aiWorks=(model.relatedWorks ?? []).map(work => '<form method="post" action="' + base + '/handoffs">' + hidden({csrf:options.csrfToken,work_id:work.session_id,request_key:model.handoffRequestKey,goal:work.intent || reader.name}) + '<button class="reader-button">' + h(work.intent || work.session_id) + '</button></form>').join('');
   const ai = !model.manual ? '<details class="reader-ai"><summary class="reader-button">' + h(u('ai')) + '</summary><p>' + h(u(aiWorks ? 'ai_help' : 'ai_none')) + '</p>' + aiWorks + '</details>' : '';
   const button = (control, key, target, expanded) => `<button class="reader-button" type="button" data-reader-${control} aria-controls="${target}" aria-expanded="${expanded}"${control === 'focus-toggle' ? ' aria-pressed="false"' : ''}>${h(t(key))}</button>`;
-  const folders = new Map();
+  const folders = new Map(), unavailableFiles = [], unsupportedFiles = [];
   for (const item of model.resources ?? []) {
     const relative = String(item.relative_path ?? item.name ?? '').replaceAll('\\', '/');
+    const file = { ...item, relative };
+    if (item.status === 'missing' || item.resource_status === 'missing' || item.open_available === false) { unavailableFiles.push(file); continue; }
+    if (!isReaderFile(relative)) { unsupportedFiles.push(file); continue; }
     const folder = relative.includes('/') ? relative.slice(0, relative.lastIndexOf('/')) : '';
     if (!folders.has(folder)) folders.set(folder, []);
-    folders.get(folder).push({ ...item, relative });
+    folders.get(folder).push(file);
   }
-  const files = [...folders].sort(([a], [b]) => a.localeCompare(b, options.locale, { numeric: true })).map(([folder, items]) => `<section class="reader-file-group"><h3 title="${h(folder)}">${h(folder || t('root_folder'))}<span>${items.length}</span></h3><ul>${items.map(item => `<li><a href="${h(readHref(item.resource_id))}" title="${h(item.relative)}" aria-label="${h(`${item.name} — ${item.relative}`)}"${item.resource_id === reader.resource_id ? ' aria-current="page"' : ''}><strong>${h(item.name)}</strong></a></li>`).join('')}</ul></section>`).join('');
+  const count = items => `<span class="reader-file-count" title="${h(label(`${items.length} 个文件`, `${items.length} files`))}" aria-label="${h(label(`${items.length} 个文件`, `${items.length} files`))}">${items.length}</span>`;
+  const files = [...folders].sort(([a], [b]) => a.localeCompare(b, options.locale, { numeric: true })).map(([folder, items]) => `<details class="reader-file-group" open><summary title="${h(folder)}"><span class="reader-folder-label">${h(folder || t('root_folder'))}</span>${count(items)}</summary><ul>${items.map(item => `<li><a class="reader-file-link" href="${h(readHref(item.resource_id))}" title="${h(item.relative)}" aria-label="${h(`${item.name} — ${item.relative}`)}"${item.resource_id === reader.resource_id ? ' aria-current="page"' : ''}><strong>${h(item.name)}</strong></a></li>`).join('')}</ul></details>`).join('') +
+    [[unavailableFiles, 'is-unavailable', label('失效文件', 'Unavailable files')], [unsupportedFiles, 'is-unsupported', label('不支持预览', 'No embedded preview')]].map(([items, state, title]) => !items.length ? '' : `<details class="reader-file-group reader-file-exceptions"><summary><span class="reader-folder-label">${h(title)}</span>${count(items)}</summary><ul>${items.map(item => `<li><span class="reader-file-link ${state}" title="${h(item.relative)}"><strong>${h(item.name)}</strong><small class="reader-file-state">${h(item.relative)}</small></span></li>`).join('')}</ul><a class="reader-manage-files" href="${h(returnHref)}">${h(label('在材料中管理', 'Manage in Materials'))}</a></details>`).join('');
   const edit = !model.notice && reader.relative_path ? `<form method="post" action="${h(`${base}/resources/open`)}"><input type="hidden" name="csrf" value="${h(options.csrfToken)}"><input type="hidden" name="path" value="${h(reader.relative_path)}"><button class="reader-button" type="submit">${h(t('external_edit'))}</button></form>` : '';
   const technical = `<details class="reader-technical"><summary>${h(t('technical'))}</summary><dl><dt>${h(t('path'))}</dt><dd>${h(reader.relative_path)}</dd><dt>${h(t('resource_id'))}</dt><dd>${h(reader.resource_id)}</dd><dt>SHA-256</dt><dd>${h(reader.sha256)}</dd><dt>${h(t('bytes'))}</dt><dd>${h(reader.bytes)}</dd></dl></details>`;
   const relationshipRows = (model.relationships?.edges ?? []).map(edge => {

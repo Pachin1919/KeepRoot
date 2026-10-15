@@ -3093,8 +3093,9 @@ function compactContentInspection(result) {
   };
 }
 
-function optionalPythonCapability() {
-  const detail = doctorDesktopUiComponent({ installationRoot, runtimeRoot: projectRoot });
+function optionalPythonCapability({ startup = false } = {}) {
+  const detail = doctorDesktopUiComponent({ installationRoot, runtimeRoot: projectRoot,
+    ...(startup ? { probeMode: 'startup' } : {}) });
   return {
     available: detail.status === 'ready',
     ...detail,
@@ -3609,7 +3610,7 @@ async function main() {
           error.code = 'ATLAS_LEDGER_INTEGRITY_FAILED';
           throw error;
         }
-        const pythonCapability = optionalPythonCapability();
+        const pythonCapability = optionalPythonCapability({ startup: true });
         const { startAtlasUiServer } = await import('../src/ui-server.js');
         const session = await startAtlasUiServer({
           stateDir,

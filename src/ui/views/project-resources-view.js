@@ -6,6 +6,7 @@ import { normalizeUiLocale, translateUi } from '../i18n.js';
 import { WORK_COPY_KEYS } from '../work-messages.js';
 import { projectResourceHref } from '../../resource-links.js';
 import { RESOURCE_MESSAGES } from '../resource-messages.js';
+import { isReaderFile } from '../../reader-formats.js';
 
 const RESOURCE_MESSAGE_KEYS = [
   'resources.choose_resource_help', 'resources.choose_resource', 'resources.folder_load_failed',
@@ -45,7 +46,7 @@ function resourceHref(model, resource) {
 }
 
 function readerHref(model, resource) {
-  if (!resource.resource_id || resource.open_available === false || !/\.(?:md|markdown|txt|pdf|docx|csv|tsv|xlsx|png|jpe?g|webp|gif)$/iu.test(resource.relative_path ?? '')) return null;
+  if (!resource.resource_id || resource.open_available === false || !isReaderFile(resource.relative_path)) return null;
   const mode = model.resource_view?.mode ?? 'files';
   const returnHref = model.reader_return_href ?? resourceViewModeHref(model, mode);
   const returnUrl = new URL(returnHref, 'http://atlas.local');
@@ -57,7 +58,7 @@ function readerHref(model, resource) {
 function readerLink(model, resource, className = 'text-link', csrfToken = null) {
   const href = readerHref(model, resource);
   if (href) return `<a class="${className}" href="${escapeHtml(href)}">${h('reader.read')}</a>`;
-  if (!csrfToken || resource.resource_id || resource.open_available === false || !/\.(?:md|markdown|txt|pdf|docx|csv|tsv|xlsx|png|jpe?g|webp|gif)$/iu.test(resource.relative_path ?? '')) return '';
+  if (!csrfToken || resource.resource_id || resource.open_available === false || !isReaderFile(resource.relative_path)) return '';
   const returnHref = model.reader_return_href ?? `${model.base}/resources?${new URLSearchParams({folder: model.selected_folder_path ?? '', path: resource.relative_path})}`;
   return `<form method="post" action="${escapeHtml(`${model.base}/resources/read-file`)}"><input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}"><input type="hidden" name="path" value="${escapeHtml(resource.relative_path)}"><input type="hidden" name="return_to" value="${escapeHtml(returnHref)}"><button class="${className}" type="submit">${h('reader.read')}</button></form>`;
 }
@@ -398,7 +399,7 @@ function fileRow(model, resource, focused) {
   const lastUsed = resource.last_worked_at
     ? `<time class="workspace-resource-last-used" datetime="${escapeHtml(resource.last_worked_at)}">${escapeHtml(lastWorked(resource))}</time>`
     : `<span class="workspace-resource-last-used">${escapeHtml(lastWorked(resource))}</span>`;
-  return `<div class="workspace-resource-file-row" data-resource-row data-resource-name="${escapeHtml(resource.name)}">${selector}<a class="workspace-resource-file${focused ? ' is-focused' : ''}" href="${escapeHtml(readerHref(model, resource) ?? resourceHref(model, resource))}" data-resource-path="${escapeHtml(resource.relative_path)}" data-resource-name="${escapeHtml(resource.name)}"${focused ? ' data-focused-resource tabindex="-1"' : ''} data-open-resource${readerRowAttributes(model, resource)} data-reader-selection data-resource-context data-context-title="${escapeHtml(resource.name)}" data-context-body="${escapeHtml(`${category} · ${stateText} · ${relationshipText}`)}"><span class="workspace-resource-file-name"><strong>${escapeHtml(resource.name)}</strong><small>${escapeHtml(category)}</small></span><span class="workspace-resource-file-type">${escapeHtml(resource.type)}</span>${lastUsed}${state}</a></div>`;
+  return `<div class="workspace-resource-file-row${displayState === 'missing' || resource.open_available === false ? ' is-unavailable' : ''}" data-resource-row data-resource-name="${escapeHtml(resource.name)}">${selector}<a class="workspace-resource-file${focused ? ' is-focused' : ''}" href="${escapeHtml(readerHref(model, resource) ?? resourceHref(model, resource))}" data-resource-path="${escapeHtml(resource.relative_path)}" data-resource-name="${escapeHtml(resource.name)}"${focused ? ' data-focused-resource tabindex="-1"' : ''} data-open-resource${readerRowAttributes(model, resource)} data-reader-selection data-resource-context data-context-title="${escapeHtml(resource.name)}" data-context-body="${escapeHtml(`${category} · ${stateText} · ${relationshipText}`)}"><span class="workspace-resource-file-name"><strong>${escapeHtml(resource.name)}</strong><small>${escapeHtml(category)}</small></span><span class="workspace-resource-file-type">${escapeHtml(resource.type)}</span>${lastUsed}${state}</a></div>`;
 }
 
 function folderContainsPath(folder, focusedPath) {

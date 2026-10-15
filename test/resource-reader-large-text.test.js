@@ -24,6 +24,22 @@ function fixture(t, text, name = 'large.md') {
     read: (resourceId, options = {}) => service.read({ projectId, resourceId, ...options }) };
 }
 
+test('large JSON registers and reads bounded UTF-8 pages with stale continuation rejection', t => {
+  const text = '{"message":"' + '中文🙂'.repeat(50000) + '"}';
+  const f = fixture(t, text, 'large.json'), id = f.register().resource_id;
+  const first = f.read(id);
+  assert.equal(first.kind, 'text'); assert.ok(first.text_page.has_more);
+  assert.ok(Buffer.byteLength(first.text) <= 65536);
+  let output = first.text, page = first;
+  while (page.text_page.has_more) {
+    page = f.read(id, {textOffset:page.text_page.next_offset,expectedTextVersion:first.text_page.version});
+    output += page.text;
+  }
+  assert.equal(output, text);
+  fs.appendFileSync(f.file, '\n');
+  assert.throws(() => f.read(id,{textOffset:first.text_page.next_offset,expectedTextVersion:first.text_page.version}), conflict);
+});
+
 test('large UTF-8 Markdown registers and reconstructs exactly through bounded byte pages', t => {
   const text = '\uFEFF# Large\r\n' + '中文🙂 line\r\n'.repeat(30000);
   const f = fixture(t, text); const id = f.register().resource_id;

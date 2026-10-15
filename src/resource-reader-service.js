@@ -7,6 +7,7 @@ import { projectDirectory, projectPath } from './ui/project-files.js';
 import { readDocxBytes } from './docx-reader.js';
 import { readTableBytes } from './table-reader.js';
 import { assertRecoveryWritable, assertDocumentUpdatesSettled } from './storage/recovery-write-guard.js';
+import { isReaderText, isReaderFile } from './reader-formats.js';
 
 const TEXT_LIMIT = 256 * 1024;
 const TEXT_PAGE_BYTES = 64 * 1024;
@@ -145,7 +146,7 @@ export function createResourceReaderService({ registry, resourceControl, install
       const checked = contentFilePath(projectPath(root, relativePath));
       const extension = path.extname(checked).toLowerCase();
       const limit = IMAGE_TYPES.has(extension) ? IMAGE_LIMIT : ['.pdf', '.docx', '.csv', '.tsv', '.xlsx'].includes(extension) ? PDF_LIMIT
-        : ['.md', '.markdown', '.txt'].includes(extension) ? Infinity : null;
+        : isReaderText(checked) ? Infinity : null;
       if (limit == null) throw conflict('This format does not have an embedded reader.');
       if (fs.lstatSync(checked).size > limit) throw conflict(`Resource exceeds the ${limit} byte reader limit. Choose a smaller file.`);
       const prior = resourceControl.ledger.resources.byPath(checked);
@@ -170,6 +171,7 @@ export function createResourceReaderService({ registry, resourceControl, install
         || !Array.isArray(targets) || targets.length > 100) throw conflict('Reader links require a current source version and at most 100 targets.');
       const source = this.read({ projectId, resourceId, expectedSha256, textOffset, expectedTextVersion });
       if (source.kind !== 'markdown') throw conflict('Reader links require Markdown.');
+      if (!targets.length) return [];
       const observed = new Set(readerLinkTokens(source.text).map(item => JSON.stringify(item)));
       const sourceFact = current(projectId, resourceId); const root = sourceFact.detail.location;
       // Directory/registration facts only: resolving a link never reads a target body.
@@ -178,9 +180,9 @@ export function createResourceReaderService({ registry, resourceControl, install
         if (project.status !== 'active') continue;
         const detail = registry.show(project.id);
         if (detail.location?.root_id !== root.root_id || path.resolve(detail.location?.root_path ?? '') !== path.resolve(root.root_path)) continue;
-        for (const fact of resourceControl.projectResources(project.id)) {
+        for (const fact of resourceControl.projectResourceSummaries(project.id)) {
           if (fact.resource?.status !== 'active') continue;
-          const all = resourceControl.describe(fact.resource_id).locations.filter(item => item.status === 'active');
+          const all = fact.locations.filter(item => item.status === 'active');
           for (const location of all.filter(item => item.project_id === project.id)) candidates.push({ projectId: project.id, resourceId: fact.resource_id, location, unique: all.length === 1 });
         }
       }
@@ -206,7 +208,7 @@ export function createResourceReaderService({ registry, resourceControl, install
         const candidate = matching[0];
         try {
           const checked = current(candidate.projectId, candidate.resourceId);
-          if (!['.md', '.markdown', '.txt', '.pdf', '.docx', '.csv', '.tsv', '.xlsx', ...IMAGE_TYPES.keys()].includes(path.extname(checked.checked).toLowerCase())) return result;
+          if (!isReaderFile(checked.checked)) return result;
         } catch { return { ...result, reason: 'unavailable' }; }
         const href = `/projects/${encodeURIComponent(candidate.projectId)}/resources/read?resource_id=${encodeURIComponent(candidate.resourceId)}${fragment ? `#${readerHeadingId(fragment)}` : ''}`;
         return { ...result, status: 'resolved', reason: null, project_id: candidate.projectId, resource_id: candidate.resourceId, href };
@@ -222,7 +224,7 @@ export function createResourceReaderService({ registry, resourceControl, install
     read({ projectId, resourceId, expectedSha256 = null, includePdfBytes = false, tableSheet = null, tableOffset = 0, textOffset = 0, expectedTextVersion = null }) {
       const before = current(projectId, resourceId); const extension = path.extname(before.checked).toLowerCase();
       const mime = IMAGE_TYPES.get(extension);
-      const kind = extension === '.md' || extension === '.markdown' ? 'markdown' : extension === '.txt' ? 'text' : extension === '.pdf' ? 'pdf' : extension === '.docx' ? 'docx' : ['.csv', '.tsv', '.xlsx'].includes(extension) ? 'table' : mime ? 'image' : 'unsupported';
+      const kind = extension === '.md' || extension === '.markdown' ? 'markdown' : isReaderText(before.checked) ? 'text' : extension === '.pdf' ? 'pdf' : extension === '.docx' ? 'docx' : ['.csv', '.tsv', '.xlsx'].includes(extension) ? 'table' : mime ? 'image' : 'unsupported';
       const result = { project_id: projectId, resource_id: resourceId, name: path.basename(before.checked),
         relative_path: before.relative.replaceAll('\\','/'), sha256: null, bytes: before.stat.size, kind };
       if (!Number.isSafeInteger(textOffset) || textOffset < 0) throw conflict('Text page offset must be a non-negative integer. Reopen the Resource.');
@@ -299,7 +301,7 @@ export function createResourceReaderService({ registry, resourceControl, install
       } else if (mime) {
         verifyImage(bytes, mime); result.mime = mime; result.image_data_url = `data:${mime};base64,${bytes.toString('base64')}`;
       } else {
-        try { result.text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+        try { if (bytes.includes(0)) throw Error('Binary text'); result.text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
         catch { throw conflict('The Resource is not valid UTF-8 text. Save it as UTF-8, then retry.'); }
       }
       return result;

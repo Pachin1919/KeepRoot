@@ -95,8 +95,8 @@ export function createProjectImportService({ stateDir, registry, intake = null, 
     return { project, location, root: projectDirectory(location) };
   }
 
-  function projectChoices() {
-    return activeProjects().map((project) => {
+  function projectChoices({ projectId = null } = {}) {
+    return activeProjects().filter(project => projectId === null || project.id === projectId).map((project) => {
       try {
         const value = activeProject(project.id);
         const folders = listProjectFolders(value.root);
