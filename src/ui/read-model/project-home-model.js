@@ -11,6 +11,7 @@ function resultStateDetail(status) {
     missing_source: 'Output file missing · record available',
     undone: 'Save undone · record available',
     unknown: 'Output could not be verified · record available',
+    not_checked: 'Not checked · saved record available',
   }[status];
 }
 
@@ -33,7 +34,7 @@ function workPosition(work) {
 function workSummary(work, resultById, getResultState) {
   const result = work.latest_save_id ? resultById.get(work.latest_save_id) ?? null : null;
   const resultState = result ? getResultState(result) : null;
-  const resultFreshness = result ? savedResultFreshness(result, { sourceFreshness: work.freshness, versionPolicy: sourceVersionPolicy(work.sources, result.version_policy) }) : null;
+  const resultFreshness = result && getResultState.metadataOnly ? {label:'Not checked'} : result ? savedResultFreshness(result, { sourceFreshness: work.freshness, versionPolicy: sourceVersionPolicy(work.sources, result.version_policy) }) : null;
   return {
     revision: work.revision,
     recipe_label: work.mapping_complete ? `v${work.recipe?.version ?? 1} ready` : `v${work.recipe?.version ?? 1} · mapping incomplete`,
@@ -177,15 +178,16 @@ function recentResult(root, base, result, workById, pinnedKeys, getResultState) 
   };
 }
 
-export function buildProjectHomeModel({ project, root, base, homeState, resourceFacts = [], workSessions = [], savedWork = [], savedViews = [], currentActivity = [], hasProjectFiles = false }) {
+export function buildProjectHomeModel({ project, root, base, homeState, resourceFacts = [], workSessions = [], savedWork = [], savedViews = [], currentActivity = [], hasProjectFiles = false, metadataOnly = false }) {
   const workById = new Map(workSessions.map((item) => [item.session_id, item]));
   const resultById = new Map(savedWork.flatMap((item) => [[item.work_id, item], ...(item.save_id && item.save_id !== item.work_id ? [[item.save_id, item]] : [])]));
   const viewById = new Map(savedViews.map((item) => [item.view_id, item]));
   const resultStates = new Map();
   const getResultState = (result) => {
-    if (!resultStates.has(result.work_id)) resultStates.set(result.work_id, savedResultState(result));
+    if (!resultStates.has(result.work_id)) resultStates.set(result.work_id, metadataOnly ? (result.status === 'undone' ? 'undone' : 'not_checked') : savedResultState(result));
     return resultStates.get(result.work_id);
   };
+  getResultState.metadataOnly = metadataOnly;
   const continueItem = resolveReference({ project, root, base, reference: homeState.continue, resourceFacts, workById, resultById, viewById, getResultState });
   const pinnedKeys = new Set(homeState.pinned.map((item) => `${item.kind}:${item.id}`));
   const pinned = homeState.pinned.map((reference) => {
@@ -222,7 +224,7 @@ export function buildProjectHomeModel({ project, root, base, homeState, resource
     });
   }
   for (const [id, status] of resultStates) {
-    if (['verified', 'undone'].includes(status)) continue;
+    if (['verified', 'undone', 'not_checked'].includes(status)) continue;
     const result = resultById.get(id);
     attention.push({ key: `result:${id}`, title: path.basename(result.result_path ?? id), detail: resultStateDetail(status), href: resultHref(root, base, result, workById), status });
   }

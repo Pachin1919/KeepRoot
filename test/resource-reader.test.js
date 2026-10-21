@@ -42,6 +42,34 @@ test('registered Markdown and captured text return exact bytes and hash without 
   }
 });
 
+test('JSON and source text read without execution or JSON validity requirements; binary text is refused', t => {
+  const f = fixture(t);
+  for (const name of ['manifest.json', 'events.jsonl', 'script.py', 'page.html', 'change.diff', 'config.yaml', 'settings.toml', '.gitignore']) {
+    const text = '<script>not executed</script>\n{ "unfinished": 中文';
+    const item = f.add(name, text);
+    assert.equal(item.read().kind, 'text', name);
+    assert.equal(item.read().text, text);
+  }
+  assert.throws(() => f.add('binary.json', Buffer.from([65, 0, 66])).read(), conflict);
+});
+
+test('empty Markdown links verify the source but never enumerate other Resources', t => {
+  const f = fixture(t), item = f.add('plain.md', '# No links');
+  const sha256 = item.read().sha256;
+  f.registry.list = () => { throw Error('Unexpected Project scan'); };
+  assert.deepEqual(f.service.resolveLinks({projectId:f.project.project_id,resourceId:item.id,expectedSha256:sha256,targets:[]}), []);
+  fs.writeFileSync(item.file, '# Changed');
+  assert.throws(() => f.service.resolveLinks({projectId:f.project.project_id,resourceId:item.id,expectedSha256:sha256,targets:[]}), conflict);
+});
+
+test('link lookup uses batched locations rather than per-file history reads', t => {
+  const f = fixture(t), target = f.add('target.md', '# Target'), source = f.add('index.md', '[Target](target.md)');
+  const sha256 = source.read().sha256;
+  f.control.projectResources = () => { throw Error('Unexpected per-file history scan'); };
+  const links = f.service.resolveLinks({projectId:f.project.project_id,resourceId:source.id,expectedSha256:sha256,targets:[{syntax:'relative_markdown',raw:'target.md'}]});
+  assert.equal(links[0].resource_id, target.id);
+});
+
 test('reader link resolution binds source hash and refuses unsafe or unregistered paths', (t) => {
   const f = fixture(t); const target = f.add('目标.md', '# 中文标题');
   const raw = ['目标.md#中文标题', 'java\nscript:alert', '//evil/a', 'data:text/plain,a', '../outside.md', 'missing.md'];
@@ -128,9 +156,9 @@ test('PDF bytes are version-bound, bounded and never interpreted as HTML', (t) =
   fs.writeFileSync(item.file, Buffer.alloc(20 * 1024 * 1024 + 1)); assert.throws(() => item.read(), conflict);
 });
 
-test('unsupported SVG and HTML return metadata without opening the content', (t) => {
+test('unsupported archives and executables return metadata without opening the content', (t) => {
   const f = fixture(t);
-  for (const name of ['a.svg', 'a.html']) {
+  for (const name of ['a.zip', 'a.exe']) {
     const item = f.add(name, '<script>secret</script>');
     const original = fs.openSync; fs.openSync = () => { throw new Error('Unexpected content open'); };
     try { const result = item.read(); assert.equal(result.kind, 'unsupported'); assert.equal(result.text, undefined); assert.equal(result.image_data_url, undefined); }

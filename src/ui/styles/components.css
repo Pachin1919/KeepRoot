@@ -184,6 +184,8 @@ h3 { font-size: var(--font-size-base); font-weight: 600; line-height: 1.4; margi
 }
 
 .sr-only { clip: rect(0, 0, 0, 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
+.activity-pagination { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--muted); }
+.activity-pagination a { padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius-control); }
 .project-tree-group { margin-bottom: 8px; }
 .project-tree-parent { align-items: center; border-radius: var(--radius-control); color: var(--ink); display: grid; font-size: var(--font-size-work); font-weight: 600; gap: 10px; grid-template-columns: minmax(0, 1fr) auto; min-height: 40px; padding: 8px 10px; text-decoration: none; }
 .project-tree-parent:hover, .project-tree-parent.is-selected { background: var(--accent-soft); color: var(--accent-strong); }
@@ -1275,3 +1277,6 @@ body.atlas-reader-body { overflow: hidden; }
 .settings-interface-sample p, .settings-code-sample p { margin: 6px 0 0; }
 .settings-code-sample code { display: block; font: var(--font-size-work)/1.65 var(--font-mono); margin-top: 8px; }
 .settings-preview .settings-sample-label { color: var(--muted); font: 600 var(--font-size-small)/1.5 var(--font-sans); margin-bottom: 8px; }
+
+.project-overview-grid.project-overview-without-results { grid-template-columns: minmax(0, 1fr); }
+.project-overview-without-results .project-overview-results { display: none; }

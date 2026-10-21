@@ -66,7 +66,7 @@ async function fixture(t,contentPolicy='structure_only'){
  const get=async route=>{const response=await fetch(new URL(route,server.workspace_url));return {status:response.status,html:await response.text()};};
  const post=(route,values)=>fetch(new URL(route,server.workspace_url),{method:'POST',redirect:'manual',body:new URLSearchParams(values)});
  const edit=()=>get(base+'/resources/edit?'+new URLSearchParams({resource_id:resourceId,expected_sha256:hash(fs.readFileSync(file)),return_to:back}));
- return {root,stateDir,registry,projects,file,csv,resourceId,tableId,otherId,base,back,get,post,edit};
+ return {root,stateDir,registry,projects,file,csv,resourceId,tableId,otherId,base,back,listBack:base+'/resources?folder=Notes',get,post,edit};
 }
 test('Toolbox chooses verified Project, refuses foreign IDs and paused module, and starts the existing Work review', {timeout:30000}, async t=>{
  const f=await fixture(t);const none=await f.get('/toolbox');assert.equal(none.status,200);assert.match(none.html,/Choose a Project/u);assert.match(none.html,/aria-disabled="true"/u);assert.match(none.html,/data-icon="toolbox"/u);
@@ -87,15 +87,15 @@ test('Toolbox chooses verified Project, refuses foreign IDs and paused module, a
    .map(match=>new URL(decode(match[1]),'http://atlas.local'))
    .find(url=>url.origin==='http://atlas.local'&&url.pathname===f.base+'/resources/read'&&url.searchParams.get('resource_id')===f.tableId);
  assert.ok(readerBack,'review links back to the selected Reader resource');
- assert.equal(readerBack.searchParams.get('return_to'),f.back,'nested return scope keeps the original folder and resource selection');
- const cancel=fields(readerReview.html,'/work/cancel');response=await f.post(f.base+'/work/cancel',cancel);const cancelled=new URL(response.headers.get('location'),'http://atlas.local');assert.equal(cancelled.searchParams.get('resource_id'),f.tableId);assert.equal(cancelled.searchParams.get('return_to'),f.back);
+ assert.equal(readerBack.searchParams.get('return_to'),f.listBack,'nested return retains folder scope; Reader identity is separate');
+ const cancel=fields(readerReview.html,'/work/cancel');response=await f.post(f.base+'/work/cancel',cancel);const cancelled=new URL(response.headers.get('location'),'http://atlas.local');assert.equal(cancelled.searchParams.get('resource_id'),f.tableId);assert.equal(cancelled.searchParams.get('return_to'),f.listBack);
  const settings=await f.get('/settings?project_id='+f.projects[0].id+'&return_to='+encodeURIComponent('/toolbox?project_id='+f.projects[0].id));const csrf=settings.html.match(/name="csrf" value="([^"]+)"/u)[1];response=await f.post('/settings?project_id='+f.projects[0].id,{csrf,action:'save',return_to:'/toolbox?project_id='+f.projects[0].id});assert.equal(new URL(response.headers.get('location'),'http://atlas.local').pathname,'/toolbox');
 });
 test('Reader full Unicode draft previews without writing, confirms same Resource, reads receipt and Undo', {timeout:30000}, async t=>{
  const f=await fixture(t), original=fs.readFileSync(f.file);const read=await f.get(f.base+'/resources/read?resource_id='+f.resourceId+'&return_to='+encodeURIComponent(f.back));assert.match(read.html,/Edit text/u);assert.match(read.html,/No related Table Work/u);assert.doesNotMatch(read.html,/<form[^>]+\/handoffs/u);
  const editor=await f.edit();assert.equal(editor.status,200);assert.match(editor.html,/data-draft-protect/u);assert.match(editor.html,/<textarea[^>]*name="text"/u);const form=fields(editor.html,'/edit/preview');assert.deepEqual(fs.readFileSync(f.file),original);
  const draft='更新材料。\n'.repeat(1600);assert.ok(Buffer.byteLength(draft)>8192);let response=await f.post(f.base+'/resources/edit/preview',{...form,text:draft});assert.equal(response.status,200);const preview=await response.text();assert.deepEqual(fs.readFileSync(f.file),original);assert.match(preview,/Current text/u);assert.match(preview,/Proposed text/u);assert.match(preview,/Save this text/u);const confirm=fields(preview,'/edit/confirm');
- response=await f.post(f.base+'/resources/edit/confirm',confirm);assert.equal(response.status,303);assert.equal(fs.readFileSync(f.file,'utf8'),draft);const target=new URL(response.headers.get('location'),'http://atlas.local');assert.equal(target.searchParams.get('resource_id'),f.resourceId);assert.equal(target.searchParams.get('return_to'),f.back);
+ response=await f.post(f.base+'/resources/edit/confirm',confirm);assert.equal(response.status,303);assert.equal(fs.readFileSync(f.file,'utf8'),draft);const target=new URL(response.headers.get('location'),'http://atlas.local');assert.equal(target.searchParams.get('resource_id'),f.resourceId);assert.equal(target.searchParams.get('return_to'),f.listBack);
  const saved=await f.get(response.headers.get('location'));assert.equal(saved.status,200);assert.match(saved.html,/Earlier Save receipts/u);assert.match(saved.html,/Undo text edit/u);const undo=fields(saved.html,'/edit/undo');response=await f.post(f.base+'/resources/edit/undo',undo);assert.equal(response.status,303);assert.deepEqual(fs.readFileSync(f.file),original);
  const emptyEditor=await f.edit();const emptyForm=fields(emptyEditor.html,'/edit/preview');response=await f.post(f.base+'/resources/edit/preview',{...emptyForm,text:''});assert.equal(response.status,200);const emptyPreview=await response.text();assert.match(emptyPreview,/Empty text/u);assert.deepEqual(fs.readFileSync(f.file),original);response=await f.post(f.base+'/resources/edit/confirm',fields(emptyPreview,'/edit/confirm'));assert.equal(response.status,303);assert.equal(fs.statSync(f.file).size,0);
 });
@@ -109,7 +109,7 @@ test('Reader keeps a saved receipt through edit cancel, rejects foreign receipt 
  assert.equal(new URL(editHref,'http://atlas.local').searchParams.get('reader_update_id'),firstId);
  editor=await f.get(editHref);assert.equal(editor.status,200);const editForm=fields(editor.html,'/edit/preview');assert.equal(editForm.reader_update_id,firstId);
  const back=[...editor.html.matchAll(/href="([^"]+)"/gu)].map(m=>new URL(decode(m[1]),'http://atlas.local')).find(url=>url.pathname===f.base+'/resources/read'&&url.searchParams.get('manual_update_id')===firstId);
- assert.ok(back);assert.equal(back.searchParams.get('resource_id'),f.resourceId);assert.equal(back.searchParams.get('return_to'),f.back);
+ assert.ok(back);assert.equal(back.searchParams.get('resource_id'),f.resourceId);assert.equal(back.searchParams.get('return_to'),f.listBack);
  const cancelled=await f.get(back.pathname+back.search);assert.match(cancelled.html,/Undo text edit/u);
  for(const [base,id,sha] of [[f.base,f.tableId,hash(fs.readFileSync(f.csv))],['/projects/'+f.projects[1].id,f.otherId,hash(Buffer.from('B text'))]]) {
    const foreign=await f.get(base+'/resources/edit?'+new URLSearchParams({resource_id:id,expected_sha256:sha,reader_update_id:firstId}));
@@ -130,4 +130,39 @@ test('Reader rejects CSRF, stale Hash and cross-Project manual refs, retains fai
  fs.writeFileSync(f.file,'External edit');response=await f.post(f.base+'/resources/edit/confirm',confirm);assert.equal(response.status,409);assert.equal(fs.readFileSync(f.file,'utf8'),'External edit');assert.match(await response.text(),/proposed/u);
  response=await f.post(f.base+'/resources/edit/preview',{...form,request_key:'stale-draft',text:'Preserved draft <unsafe>'});assert.equal(response.status,409);const failed=await response.text();assert.match(failed,/Preserved draft &lt;unsafe&gt;/u);assert.match(failed,/Reload current file/u);assert.equal(fs.readFileSync(f.file,'utf8'),'External edit');
  editor=await f.edit();form=fields(editor.html,'/edit/preview');response=await f.post(f.base+'/resources/edit/preview',{...form,text:'x'.repeat(256*1024+1)});assert.equal(response.status,409);assert.equal(fs.readFileSync(f.file,'utf8'),'External edit');
+});
+
+test('Reader keeps the same document readable when the local editor runtime is unavailable', {timeout:30000}, async t=>{
+ const f=await fixture(t), original=fs.readFileSync(f.file);
+ const prior=process.env.ATLAS_CONTENT_PYTHON;
+ process.env.ATLAS_CONTENT_PYTHON=path.join(f.root,'unavailable-python.exe');
+ t.after(()=>{if(prior==null)delete process.env.ATLAS_CONTENT_PYTHON;else process.env.ATLAS_CONTENT_PYTHON=prior;});
+ const result=await f.edit();
+ assert.equal(result.status,409);
+ assert.match(result.html,/<h1\b[^>]*>Original<\/h1>/u);
+ assert.match(result.html,/data-reader-edit-unavailable/u);
+ assert.match(result.html,/data-reader-default-edit="false"/u);
+ assert.doesNotMatch(result.html.slice(result.html.indexOf('<body')),/<form\b[^>]*data-reader-inline-edit/u);
+ assert.match(result.html,new RegExp(`data-reader-resource-id="${f.resourceId}"`,'u'));
+ assert.deepEqual(fs.readFileSync(f.file),original);
+});
+
+test('Reader source context opens one exact Resource without enumerating the Project tree', {timeout:30000}, async t=>{
+ const f=await fixture(t), original=fs.readFileSync(f.file), projectRoot=path.dirname(f.file);
+ const originalReadDir=fs.readdirSync;
+ let treeReads=0;
+ fs.readdirSync=function(directory,...args){
+  if(path.resolve(String(directory)).toLowerCase()===projectRoot.toLowerCase())treeReads++;
+  return originalReadDir.call(fs,directory,...args);
+ };
+ try {
+  const read=await f.get(f.base+'/resources/read?'+new URLSearchParams({resource_id:f.resourceId,return_to:f.back}));
+  assert.equal(read.status,200);
+  assert.equal(treeReads,0,'ordinary Reader context must not browse the Project tree');
+  assert.match(read.html,new RegExp(`data-context-resource-id="${f.resourceId}"`,'u'));
+  assert.match(read.html,/content-location\?resource_id=/u);
+  assert.match(read.html,/document-updates\/new\?resource_id=/u);
+  assert.match(read.html,/document-update-batches\/new/u);
+  assert.deepEqual(fs.readFileSync(f.file),original);
+ } finally {fs.readdirSync=originalReadDir;}
 });

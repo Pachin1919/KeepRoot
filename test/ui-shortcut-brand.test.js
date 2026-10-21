@@ -12,6 +12,23 @@ function createLink(file,wrapper,target=powershell){const args='-NoProfile -Exec
 function readLink(file){const result=ps('$shell=New-Object -ComObject WScript.Shell; $link=$shell.CreateShortcut('+quote(file)+'); [pscustomobject]@{target=$link.TargetPath;arguments=$link.Arguments;icon=$link.IconLocation;working=$link.WorkingDirectory;description=$link.Description} | ConvertTo-Json -Compress');assert.equal(result.status,0,result.stderr);return JSON.parse(result.stdout);}
 function update(f){return spawnSync(powershell,['-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',path.join(root,'scripts','update-ui-shortcut.ps1'),'-InstallRoot',f.home,'-ShortcutRoot',f.menu],{encoding:'utf8',windowsHide:true,timeout:30000});}
 
+test('shortcut removal deletes only this installation entries and preserves foreign shortcut bytes', {skip:process.platform!=='win32',timeout:30000},()=>{
+ const f=fixture(),old=path.join(f.menu,'Atlas UI.lnk'),current=path.join(f.menu,'Keeproot.lnk');
+ createLink(old,path.join(f.home,'atlas-ui.ps1'));createLink(current,path.join(f.scope,'another','atlas-ui.ps1'));const foreign=fs.readFileSync(current);
+ const removed=spawnSync(powershell,['-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',path.join(root,'scripts','update-ui-shortcut.ps1'),'-InstallRoot',f.home,'-ShortcutRoot',f.menu,'-Remove'],{encoding:'utf8',windowsHide:true,timeout:30000});
+ assert.equal(removed.status,0,removed.stderr);assert.equal(fs.existsSync(old),false);assert.deepEqual(fs.readFileSync(current),foreign);
+});
+
+test('PowerShell installer creates one Keeproot entry, respects no-shortcut and retains state on uninstall', {skip:process.platform!=='win32',timeout:60000},()=>{
+ const scope=path.join(root,'test/.tmp/v20-host-onboarding-20261013/installer-'+crypto.randomUUID()),home=path.join(scope,'Install'),skill=path.join(scope,'Skill'),menu=path.join(scope,'Programs');fs.mkdirSync(menu,{recursive:true});
+ const call=(command,extra=[])=>spawnSync(powershell,['-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',path.join(root,'install-atlas.ps1'),'-Command',command,'-InstallRoot',home,'-SkillRoot',skill,'-NodePath',process.execPath,'-ShortcutRoot',menu,...extra],{encoding:'utf8',windowsHide:true,timeout:30000});
+ let result=call('install');assert.equal(result.status,0,result.stderr);assert.deepEqual(fs.readdirSync(menu),['Keeproot.lnk']);
+ const link=readLink(path.join(menu,'Keeproot.lnk'));assert.equal(link.description,'Keeproot');assert.equal(link.icon,path.join(home,'runtime','assets','keeproot.ico')+',0');
+ const marker=path.join(home,'state','retained-fixture.txt');fs.writeFileSync(marker,'keep state');const before=fs.readFileSync(path.join(menu,'Keeproot.lnk'));
+ result=call('upgrade',['-NoStartMenuShortcut']);assert.equal(result.status,0,result.stderr);assert.deepEqual(fs.readFileSync(path.join(menu,'Keeproot.lnk')),before);assert.equal(fs.readFileSync(marker,'utf8'),'keep state');
+ result=call('uninstall');assert.equal(result.status,0,result.stderr);assert.deepEqual(fs.readdirSync(menu),[]);assert.equal(fs.readFileSync(marker,'utf8'),'keep state');
+});
+
 test('Keeproot ICO contains usable Windows sizes and the existing K spine/branch geometry',()=>{
  const ico=fs.readFileSync(path.join(root,'assets','keeproot.ico'));assert.equal(ico.readUInt16LE(0),0);assert.equal(ico.readUInt16LE(2),1);const count=ico.readUInt16LE(4),sizes=[];
  for(let i=0;i<count;i++){const entry=6+i*16,size=ico[entry]||256,offset=ico.readUInt32LE(entry+12),bytes=ico.readUInt32LE(entry+8);sizes.push(size);assert.ok(offset+bytes<=ico.length);assert.equal(ico.readUInt16LE(entry+6),32);assert.equal(ico.readInt32LE(offset+4),size);assert.equal(ico.readInt32LE(offset+8),size*2);

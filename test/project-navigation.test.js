@@ -119,7 +119,8 @@ test('Reader and Work keep their service Project and the exact materials return 
   const returnHref = '/projects/A/resources?folder=Data&resource_id=RES-source';
   const reader = renderResourceReaderView({ project, returnHref, resources: [], reader: { resource_id: 'RES-source', project_id: 'A', name: 'Source.md', relative_path: 'Data/Source.md', kind: 'markdown', sha256: 'a'.repeat(64), text: '# Source' } }, options);
   assert.match(shell(reader), /data-project-context="A"/u);
-  assert.ok(reader.includes(`href="${returnHref.replaceAll('&', '&amp;')}"`));
+  assert.ok(reader.includes('href="/projects/A/resources?folder=Data"'));
+  assert.match(reader, /data-reader-resource-id="RES-source"/u);
   assert.match(shell(reader), /href="\/projects\/A\/resources"/u);
   const work = renderDataWorkView({ mode: 'unavailable', project, session: { project_id: 'A' } }, options);
   assert.match(shell(work), /data-project-context="A"/u);

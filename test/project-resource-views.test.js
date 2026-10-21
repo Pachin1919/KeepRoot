@@ -533,7 +533,7 @@ test('Resources HTML previews and confirms same-Project linked_to edges and read
   const sourceAfter = await (await fetch(pageUrl)).text();
   const edgeId = relation.id;
   assert.match(sourceAfter, new RegExp(`data-resource-link-id="${edgeId}"`, 'u'));
-  assert.match(sourceAfter, new RegExp(`href="[^"]*resource_id=${encodeURIComponent(target.resource_id)}"`, 'u'));
+  assert.match(sourceAfter, new RegExp(`href="[^"]*resource_id=${encodeURIComponent(target.resource_id)}(?:&amp;[^"]*)?"`, 'u'));
   const targetPage = await (await fetch(new URL(`/projects/${f.a.project_id}/resources?resource_id=${encodeURIComponent(target.resource_id)}`, server.workspace_url))).text();
   assert.match(targetPage, new RegExp(`data-resource-link-id="${edgeId}"`, 'u'));
   assert.match(targetPage, /incoming/u);

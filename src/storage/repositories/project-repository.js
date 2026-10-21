@@ -16,11 +16,15 @@ export class ProjectRepository {
     this.transaction = transaction;
   }
 
-  create({ projectId, name, currentPath, aliases, status, parentProjectId, splitFrom, createdAt }) {
+  create({ projectId, name, currentPath, aliases, status, parentProjectId, splitFrom, createdAt, registrationRootId = null }) {
     return this.transaction(() => {
-      if (this.db.prepare(`
+      const collision = registrationRootId
+        ? this.db.prepare(`SELECT project_id FROM project_locations
+            WHERE root_id = ? AND relative_path = ? COLLATE NOCASE AND status = 'active'`).get(registrationRootId, currentPath)
+        : this.db.prepare(`
         SELECT id FROM projects WHERE current_path = ? AND status = 'active'
-      `).get(currentPath)) {
+      `).get(currentPath);
+      if (collision) {
         throw new Error(`An active Project already uses path: ${currentPath}`);
       }
       if (parentProjectId) this.get(parentProjectId);

@@ -1,6 +1,7 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
-import { configureCaptureNetwork, captureNetworkFailure } from './capture-network.js';
+import { configureCaptureNetwork, captureNetworkFailure, captureHttpFetch } from './capture-network.js';
+import { parseGeminiShare } from './gemini-share-parser.js';
 
 const MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
@@ -230,7 +231,7 @@ async function boundedBody(response) {
 }
 
 export async function fetchPublicDocument(urlInput, {
-  fetchImpl = globalThis.fetch,
+  fetchImpl = captureHttpFetch,
   lookupHost = dns.lookup,
   timeoutMs = 15_000,
   includeResponseBytes = false,
@@ -241,13 +242,44 @@ export async function fetchPublicDocument(urlInput, {
     if (['ENOTFOUND','EAI_AGAIN'].includes(error.code)) throw captureNetworkFailure(error);
     throw error;
   });
-  const network = fetchImpl === globalThis.fetch ? await configureNetwork() : {mode:'injected_fetch'};
+  const network = fetchImpl === captureHttpFetch || fetchImpl === globalThis.fetch ? await configureNetwork() : {mode:'injected_fetch'};
   let current = target.url;
   const requestedUrl = current.toString();
   const resolverModes = new Set([target.resolver_mode]);
   let redirects = 0;
   let response;
   while (true) {
+    if(current.hostname.toLowerCase()==='gemini.google.com' && /^\/share\/[a-f0-9]+\/?$/iu.test(current.pathname)) {
+      const shareId=current.pathname.split('/').filter(Boolean).at(-1);
+      const rpcUrl=new URL('https://gemini.google.com/_/BardChatUi/data/batchexecute?rpcids=ujx1Bf');
+      await publicUrl(rpcUrl.toString(),lookupHost);
+      let rpcResponse;
+      try { rpcResponse=await fetchImpl(rpcUrl,{
+        method:'POST',redirect:'manual',signal:AbortSignal.timeout(timeoutMs),
+        headers:{'content-type':'application/x-www-form-urlencoded;charset=UTF-8','user-agent':'Keeproot-Local-Capture/2.0'},
+        body:new URLSearchParams({'f.req':JSON.stringify([[['ujx1Bf',JSON.stringify([null,shareId,[4]]),null,'generic']]]),at:''}).toString(),
+      }); }catch(error){throw captureNetworkFailure(error);}
+      if(!rpcResponse.ok) {
+        await rpcResponse.body?.cancel?.();
+        throw Object.assign(new Error(`failed: gemini_http_${rpcResponse.status}`),{
+          code:'ATLAS_CAPTURE_EXPORT_REQUIRED',capture:{requested_url:requestedUrl,final_url:current.toString(),http_status:rpcResponse.status},
+        });
+      }
+      const rpcBytes=await boundedBody(rpcResponse);
+      let chat;
+      try {chat=await parseGeminiShare(new TextDecoder('utf-8',{fatal:true}).decode(rpcBytes),shareId);}
+      catch(error){if(error.code==='ATLAS_CAPTURE_EXPORT_REQUIRED')error.capture={requested_url:requestedUrl,final_url:current.toString(),http_status:200};throw error;}
+      return {
+        capture:{schema:'atlas-browser-capture.v1',capture_mode:'gemini_share',capture_scope:'shared_conversation_text',completeness:'shared_text_only',
+          source_url:current.toString(),requested_url:requestedUrl,title:chat.title,captured_at:new Date().toISOString(),
+          conversation_id:chat.conversation_id,messages:chat.messages},
+        requested_url:requestedUrl,final_url:current.toString(),redirect_count:redirects,http_status:200,
+        content_type:rpcResponse.headers.get('content-type')??'application/json',downloaded_bytes:rpcBytes.length,
+        ...(includeResponseBytes ? {response_bytes:rpcBytes} : {}),
+        resolver_mode:resolverModes.has('https_proxy_fake_ip')?'https_proxy_fake_ip':'public_dns',network_used:true,network_mode:network.mode,
+        browser_used:false,external_application_used:false,
+      };
+    }
     try { response = await fetchImpl(current, {
       method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
       headers: {

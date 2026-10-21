@@ -53,3 +53,9 @@ The Host may propose structured relationships. Atlas validates Resource identity
 ## Unsupported requests
 
 Report the missing operation. Do not route to removed Task, Task Review, Analytics, Agent Lifecycle, SessionStart Hook, or hidden Context pages. Internal Guarded, Derived, and Intake modules are implementation details and are not alternate user workflows.
+
+## URL capture and bounded suggestions
+
+Use installed Keeproot first for URLs and shared conversations. On failure report `failed` and the returned reason. Ordinary tasks may use an authorized Host fallback, credit it to that Host, then save through Keeproot. Development and acceptance tests stop the affected chain; a Host or browser replacement is not a passing Keeproot result.
+
+Saved Views are dynamic and read-only; partial or unknown does not mean complete or unchanged. Submit at most 10 evidence-backed property candidates for one explicit View or Resource scope. Preview values become properties only after the user's accept/edit/reject decision in UI.

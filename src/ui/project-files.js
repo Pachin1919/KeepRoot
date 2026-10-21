@@ -66,7 +66,21 @@ export function browseProjectFiles(root, relativePath = '') {
   return { directory: path.relative(root, directory).replaceAll('\\', '/'), items, truncated: visible.length > MAX_DIRECTORY_ITEMS };
 }
 
-export function listProjectFolders(root) {
+export function listProjectFolders(root, relativePath = null) {
+  if (relativePath !== null) {
+    const parts = String(relativePath).split('/').filter(Boolean);
+    const branches = ['', ...parts.map((_, index) => parts.slice(0, index + 1).join('/'))];
+    const items = new Map();
+    let truncated = false;
+    for (const branch of branches) {
+      const listing = browseProjectFiles(root, branch);
+      truncated ||= listing.truncated;
+      for (const item of listing.items.filter(item => item.kind === 'folder')) {
+        items.set(item.relative_path, {name:item.name,relative_path:item.relative_path,depth:item.relative_path.split('/').length});
+      }
+    }
+    return {items:[...items.values()],truncated};
+  }
   regularDirectory(root);
   const items = [];
   const queue = [root];

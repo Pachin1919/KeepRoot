@@ -5,6 +5,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { isPathInside } from './paths.js';
 
+export const SUPPORTED_CODEX_CLI_VERSIONS = Object.freeze(['0.162.0-alpha.2', '0.162.0-alpha.17.2']);
+
 export const hostError = (message, code = 'ATLAS_HOST_PROTOCOL') => Object.assign(new Error(message), { code });
 export function plainPath(input, { boundary, directory = false, absent = false } = {}) {
   if (typeof input !== 'string' || !path.isAbsolute(input)) throw hostError('A trusted absolute path is required.', 'ATLAS_INVALID_ARGUMENT');
@@ -33,13 +35,13 @@ export function validateHostConfig(config, stateDir, { probe = true } = {}) {
   if (!config?.enabled) throw hostError('Host integration is disabled.', 'ATLAS_HOST_DISABLED');
   const executable = plainPath(config.executable);
   if (!/^[a-f0-9]{64}$/u.test(config.executable_sha256 ?? '') || crypto.createHash('sha256').update(fs.readFileSync(executable)).digest('hex') !== config.executable_sha256) throw hostError('Trusted Host executable hash does not match.');
-  if (config.cli_version !== '0.162.0-alpha.2') throw hostError('This Host client requires CLI version 0.162.0-alpha.2.');
+  if (!SUPPORTED_CODEX_CLI_VERSIONS.includes(config.cli_version)) throw hostError(`This Host client supports reviewed CLI versions: ${SUPPORTED_CODEX_CLI_VERSIONS.join(', ')}.`);
   const home = plainPath(config.codex_home, { boundary: stateDir, directory: true });
   if (probe) {
     const version = spawnSync(executable, ['--version'], { shell: false, encoding: 'utf8', windowsHide: true, timeout: 10000, maxBuffer: 65536, env: { ...process.env, CODEX_HOME: home } });
     if (version.status !== 0 || version.error || version.stdout.trim() !== `codex-cli ${config.cli_version}`) throw hostError('Host executable version probe did not match the pinned version.');
   }
-  return { executable, home };
+  return { executable, home, cliVersion: config.cli_version };
 }
 
 function object(value) { return value && typeof value === 'object' && !Array.isArray(value); }
@@ -59,6 +61,7 @@ export class CodexAppServerClient extends EventEmitter {
   constructor({ config, stateDir, cwd, spawnProcess = spawn, verify = validateHostConfig, rpcTimeoutMs = 10000 }) {
     super();
     const trusted = verify(config, stateDir);
+    this.home = trusted.home; this.cliVersion = trusted.cliVersion;
     this.pending = new Map(); this.nextId = 1; this.closed = false; this.initialized = false; this.buffer = Buffer.alloc(0); this.stderrBytes = 0; this.rpcTimeoutMs = rpcTimeoutMs;
     this.child = spawnProcess(trusted.executable, ['app-server', '--listen', 'stdio://'], { cwd, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, CODEX_HOME: trusted.home } });
     this.child.stdout.on('data', chunk => this.#receive(chunk));
@@ -118,8 +121,18 @@ export class CodexAppServerClient extends EventEmitter {
   }
   respond(id, result, error) { this.#write(error ? { id, error } : { id, result }); }
   async initialize() {
-    const result = await this.request('initialize', { clientInfo: { name: 'atlas_host', title: 'Atlas', version: '2.0' }, capabilities: { experimentalApi: false } });
-    this.#write({ method: 'initialized', params: {} }); this.initialized = true; return result;
+    try {
+      const result = await this.request('initialize', { clientInfo: { name: 'atlas_host', title: 'Keeproot', version: '2.0' }, capabilities: { experimentalApi: false } });
+      // Bind the actual server response to the reviewed executable and isolated home.
+      // A custom verifier without cliVersion is a test/diagnostic seam, not the product default.
+      if (this.cliVersion) {
+        const reported = result.userAgent.match(/^[^/\r\n]{1,128}\/([0-9]+\.[0-9]+\.[0-9]+-[A-Za-z0-9.-]+)(?:\s|$)/u)?.[1];
+        if (reported !== this.cliVersion) throw hostError('Host handshake version does not match the pinned executable.');
+        if (typeof result.codexHome !== 'string' || !path.isAbsolute(result.codexHome)
+          || (process.platform === 'win32' ? path.resolve(result.codexHome).toLowerCase() !== path.resolve(this.home).toLowerCase() : path.resolve(result.codexHome) !== path.resolve(this.home))) throw hostError('Host handshake home does not match the reviewed isolated home.');
+      }
+      this.#write({ method: 'initialized', params: {} }); this.initialized = true; return result;
+    } catch (error) { this.#fail(error); throw error; }
   }
   close() { this.#fail(hostError('Atlas closed its Host connection.')); }
 }

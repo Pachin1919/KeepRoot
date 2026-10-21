@@ -1,5 +1,6 @@
 import { escapeHtml } from './components.js';
 export function toolboxErrorKey(error) {
+ if(error?.code==='ATLAS_STATE_CONFLICT') return 'revision_error';
  if(error?.code==='ATLAS_CAPTURE_NETWORK') {
   const reason=error.details?.reason;
   if(reason==='connection_timeout')return 'network_timeout';

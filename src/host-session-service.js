@@ -161,8 +161,24 @@ export function createHostSessionService({ stateDir, handoffs, resolveProject, c
     }
     clients.get(session.session_id)?.close(); clients.delete(session.session_id);
   }
+  function retainCompletedMessage(session, item) {
+    if (item?.type !== 'agentMessage') return;
+    if (typeof item.id !== 'string' || !item.id || item.id.length > 256 || typeof item.text !== 'string') throw hostError('Invalid completed Host message.');
+    // Reconcile final text against the durable deltas. Append only the missing suffix
+    // so final-only responses, repeated completion and reconnect do not lose or duplicate text.
+    const journal = fileFor(session.session_id, 'jsonl');
+    if (fs.statSync(journal).size > 4 * 1024 * 1024) throw hostError('Host event journal exceeds its size limit.');
+    let streamed = '';
+    for (const line of fs.readFileSync(journal, 'utf8').split('\n').slice(0, -1)) {
+      const event = JSON.parse(line).event;
+      if (event.kind === 'message' && event.item_id === item.id) streamed += event.text;
+    }
+    if (!item.text.startsWith(streamed)) throw hostError('Completed Host text conflicts with its recorded stream.');
+    for (let offset = streamed.length; offset < item.text.length; offset += 16384) record(session, 'message', item.text.slice(offset, offset + 16384), { item_id: item.id });
+  }
   function finish(session, turn) {
     if (turn.id !== session.turn_id || !['completed', 'failed', 'interrupted'].includes(turn.status)) return;
+    for (const item of turn.items ?? []) retainCompletedMessage(session, item);
     session.status = turn.status; session.result_available = turn.status === 'completed'; session.pending_permission = null;
     if (turn.error) session.error = { code: 'ATLAS_HOST_PROTOCOL', message: String(turn.error.message ?? 'Host turn failed.').slice(0, 2000) };
     record(session, 'status', `Host turn ${turn.status}. Assistant output is not an Atlas Save Result.`);
@@ -180,6 +196,7 @@ export function createHostSessionService({ stateDir, handoffs, resolveProject, c
       else if (method === 'item/agentMessage/delta' && params.turnId === session.turn_id && typeof params.itemId === 'string' && typeof params.delta === 'string') {
         for (let offset = 0; offset < params.delta.length; offset += 16384) record(session, 'message', params.delta.slice(offset, offset + 16384), { item_id: params.itemId.slice(0, 256) });
       }
+      else if (method === 'item/completed' && params.turnId === session.turn_id) retainCompletedMessage(session, params.item);
     };
     client.on('notification', message => {
       try { if (!ready) { if (backlog.length >= 128) throw hostError('Host startup notification buffer exceeded its limit.'); backlog.push(message); } else notification(message); }

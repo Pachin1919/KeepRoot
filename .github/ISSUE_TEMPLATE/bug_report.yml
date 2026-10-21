@@ -1,0 +1,39 @@
+name: Bug report
+description: Report a reproducible problem with a small fictional example.
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: Do not attach credentials, private documents, chat archives, or state databases. Use a fictional file and redact logs.
+  - type: input
+    id: version
+    attributes:
+      label: Version and build
+      description: Settings build identifier or CLI version; include branch/commit for source runs.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Windows version, Node/Python versions, and CLI, browser or native window. Add display scale for layout bugs.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the command or clicks and the smallest fictional input.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual result
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted error or screenshot
+      description: For CLI failures, include ok, business status and error code. Omit file bodies and private paths.

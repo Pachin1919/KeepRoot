@@ -103,7 +103,10 @@ test('Host and Resources render the same bounded Resource to Work to Result focu
   const resultNode = host.nodes.find((node) => node.id === `result:${saved.save_id}`);
   const sourceWorkEdge = host.edges.find((edge) => edge.derived_kind === 'source_to_work');
   assert.equal(resultNode.freshness?.status, 'fresh');
-  assert.equal(sourceWorkEdge.impact?.status, 'fresh');
+  // resource.show checks the selected file, while openProjectSessions returns
+  // recorded Work metadata (freshnessSummary({checked:false})). These are
+  // different checks; the chain must retain the Work's unchecked state.
+  assert.equal(sourceWorkEdge.impact?.status, 'not_checked');
 
   const pageUrl = new URL(`/projects/${encodeURIComponent(project.project_id)}/resources?resource_id=${encodeURIComponent(source.resource_id)}&relation_depth=2&relation_status=active&graph=1`, server.workspace_url);
   const pageResponse = await fetch(pageUrl); assert.equal(pageResponse.status, 200);
@@ -115,7 +118,9 @@ test('Host and Resources render the same bounded Resource to Work to Result focu
   assert.match(html, new RegExp(`/work/${work.session_id}`, 'u'));
   const graphData = text => JSON.parse(text.match(/data-graph-data="([^"]+)"/u)[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&#39;', "'"));
   assert.equal(graphData(html).nodes.find(node=>node.id===`result:${saved.save_id}`).freshness.label,'Fresh');
-  assert.equal(graphData(html).edges.find(edge=>edge.id===sourceWorkEdge.id).impact.label,'Fresh');
+  // Ordinary UI reads recorded Resource metadata. An explicitly verified Save
+  // stays Fresh, while that alone cannot verify the current Work's Source.
+  assert.equal(graphData(html).edges.find(edge=>edge.id===sourceWorkEdge.id).impact.label,'Not checked');
   assert.match(html,/class="workspace-graph-page"/u);
   assert.doesNotMatch(html,/class="workspace-focus"/u);
   const readerHtml = await (await fetch(new URL(`/projects/${project.project_id}/resources/read?resource_id=${source.resource_id}&graph=1&relation_depth=2`,server.workspace_url))).text();

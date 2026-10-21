@@ -46,10 +46,10 @@ test('Project file registration rejects escapes links oversized unsupported owne
   const f=fixture(t),count=()=>f.control.ledger.db.prepare('SELECT count(*) n FROM resources').get().n;
   fs.writeFileSync(path.join(f.root,'普通.txt'),'bounded');
   fs.writeFileSync(path.join(f.root,'unsupported.exe'),'not software');
-  fs.writeFileSync(path.join(f.root,'large.txt'),Buffer.alloc(256*1024+1));
+  fs.writeFileSync(path.join(f.root,'large.png'),Buffer.alloc(8*1024*1024+1));
   const outside=path.join(f.directory,'outside');fs.mkdirSync(outside);fs.writeFileSync(path.join(outside,'secret.txt'),'DO NOT READ');
   fs.symlinkSync(outside,path.join(f.root,'linked'),process.platform==='win32'?'junction':'dir');
-  for(const relativePath of ['../outside/secret.txt',path.join(outside,'secret.txt'),'普通.txt:stream','linked/secret.txt','large.txt','unsupported.exe','.']) {
+  for(const relativePath of ['../outside/secret.txt',path.join(outside,'secret.txt'),'普通.txt:stream','linked/secret.txt','large.png','unsupported.exe','.']) {
     assert.throws(()=>f.service.registerProjectFile({projectId:f.id,relativePath}));assert.equal(count(),0);
   }
   assert.throws(()=>f.service.registerProjectFile({projectId:'PRJ-missing',relativePath:'普通.txt'}));assert.equal(count(),0);
@@ -89,7 +89,8 @@ test('HTML explicit Read on an unregistered Project file uses CSRF and returns t
   const href=first.headers.get('location'),id=new URL(href,server.workspace_url).searchParams.get('resource_id');assert.ok(id);
   const reader=await fetch(new URL(href,server.workspace_url));assert.equal(reader.status,200);
   const html=await reader.text();assert.match(html,/A readable local file/u);assert.ok(html.includes(id));
-  assert.ok(html.includes(`href="${base}?folder=&amp;resource_id=${id}"`));
+  assert.ok(html.includes(`href="${base}?folder="`));
+  assert.match(html,new RegExp(`data-reader-resource-id="${id}"`,'u'));
   assert.equal((await post(csrf,'说明.md')).headers.get('location'),href);assert.equal(f.control.projectResources(f.id).length,1);
   const maliciousReturn=await post(csrf,'说明.md','https://outside.invalid/');
   const safeReturn=new URL(maliciousReturn.headers.get('location'),server.workspace_url).searchParams.get('return_to');
