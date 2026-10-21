@@ -1,5 +1,6 @@
 export const TOOLBOX_MESSAGES = Object.freeze({
   "en": {
+    "toolbox.revision_error": "The Work revision changed; reload this Work before continuing.",
     "toolbox.catalog_help": "Choose a tool, then choose its materials. Preview before saving.",
     "toolbox.convert_group": "Convert & organise",
     "toolbox.convert_group_help": "Turn a source into a usable file.",
@@ -25,7 +26,7 @@ export const TOOLBOX_MESSAGES = Object.freeze({
     "toolbox.content_category": "Content conversion",
     "toolbox.source_metadata": "Source information",
     "toolbox.markdown": "Public URL → Markdown",
-    "toolbox.markdown_help": "Convert static public HTML to a readable .md file. No login, dynamic page or exact-layout capture. Preview first; only Save confirmation creates the output.",
+    "toolbox.markdown_help": "Save text from public pages and supported ChatGPT or Gemini shares. No login or media downloads. Preview first, then confirm Save.",
     "toolbox.url": "Public URL",
     "toolbox.folder": "Existing destination folder",
     "toolbox.name": "Markdown filename",
@@ -100,6 +101,7 @@ export const TOOLBOX_MESSAGES = Object.freeze({
     "toolbox.no_change": "The text is unchanged."
   },
   "zh-CN": {
+    "toolbox.revision_error": "Work 版本已变化，请重新载入当前工作后继续。",
     "toolbox.catalog_help": "先选工具，再选材料。结果先预览，再保存。",
     "toolbox.convert_group": "转换与整理",
     "toolbox.convert_group_help": "把来源变成可继续使用的文件。",
@@ -125,7 +127,7 @@ export const TOOLBOX_MESSAGES = Object.freeze({
     "toolbox.content_category": "内容转换",
     "toolbox.source_metadata": "来源信息",
     "toolbox.markdown": "公开网址 → Markdown",
-    "toolbox.markdown_help": "将静态公开 HTML 转成可阅读的 .md 文件。不支持登录页面、动态页面或原样版式采集。先预览，明确确认 Save 后才创建输出。",
+    "toolbox.markdown_help": "保存公开网页及受支持的 ChatGPT、Gemini 分享文字。不登录，不下载媒体。先预览，再确认保存。",
     "toolbox.url": "公开网址",
     "toolbox.folder": "已有目标文件夹",
     "toolbox.name": "Markdown 文件名",

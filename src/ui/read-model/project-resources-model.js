@@ -126,7 +126,7 @@ function resourceRecord(item, root, recentWork, projectId, savedWork = [], curre
       last_continued_at: work.last_continued_at,
       purpose: work.inspect.purpose,
       sheet: work.inspect.sheet,
-      source_status: sourceFingerprintStatus(work, filePath, readContext?.fingerprint),
+      source_status: readContext?.metadataOnly ? 'Not checked' : sourceFingerprintStatus(work, filePath, readContext?.fingerprint),
       initiated_by: work.initiated_by,
       inspection_cache_hit: work.inspection_cache_hit,
       result_summary: work.result_summary,
@@ -147,7 +147,7 @@ function resourceRecord(item, root, recentWork, projectId, savedWork = [], curre
       version_policy: saved.version_policy ?? 'pinned_version',
       result_summary: saved.result_summary, created_at: saved.created_at,
       undo_available: saved.write?.undo_available === true,
-      source_status: savedSourceStatus(saved, readContext?.fingerprint),
+      source_status: readContext?.metadataOnly ? 'Not checked' : savedSourceStatus(saved, readContext?.fingerprint),
     } : null,
     created_work: createdWork.map((savedItem) => ({ work_id: savedItem.work_id, name: path.basename(savedItem.result_path), result_path: savedItem.result_path, relative_path: path.relative(root, savedItem.result_path).replaceAll('\\', '/'), created_at: savedItem.created_at, version_policy: savedItem.version_policy ?? 'pinned_version' })),
     activity: activity ? {
@@ -240,7 +240,7 @@ function missingSources(savedWork) {
     .map((item) => ({ name: path.basename(item.source_path), source_path: item.source_path }));
 }
 
-function focusedRecord(root, focusedPath, recentWork, projectId, savedWork, currentActivity, resourceFacts, sessionTimes = null) {
+function focusedRecord(root, focusedPath, recentWork, projectId, savedWork, currentActivity, resourceFacts, sessionTimes = null, readContext = null) {
   if (!focusedPath) return null;
   try {
     const filePath = projectPath(root, focusedPath);
@@ -252,7 +252,7 @@ function focusedRecord(root, focusedPath, recentWork, projectId, savedWork, curr
       bytes: stat.size,
       modified_at: stat.mtime.toISOString(),
     };
-    const record = resourceRecord(item, root, recentWork, projectId, savedWork, currentActivity, resourceFacts, sessionTimes);
+    const record = resourceRecord(item, root, recentWork, projectId, savedWork, currentActivity, resourceFacts, sessionTimes, readContext);
     return { ...record, state: resourceState(record) };
   } catch {
     return null;
@@ -306,19 +306,24 @@ function representationFor(resource, stateDir) {
 }
 
 export function buildProjectResourcesModel({ project, root, base, recentWork, savedWork = [], currentActivity = [], resourceFacts = [], savedWorkError = false, focusedPath = null, focusedResourceId = null, selectedFolderPath = null, stateDir = null, activityReturnHref = null, workSession = null, workSessions = [] }) {
-  const listed = searchProjectFiles(root, '');
   const requestedFolder = typeof selectedFolderPath === 'string' ? selectedFolderPath.replaceAll('\\', '/').replace(/^\/+|\/+$/gu, '') : null;
-  const folders = listProjectFolders(root);
-  const requestedFolderExists = requestedFolder !== null
-    && (requestedFolder === '' || folders.items.some((folder) => folder.relative_path === requestedFolder));
-  const visibleItems = [...listed.items];
-  if (requestedFolderExists) {
-    for (const item of browseProjectFiles(root, requestedFolder).items.filter((entry) => entry.kind === 'file')) {
-      if (!visibleItems.some((entry) => entry.relative_path === item.relative_path)) visibleItems.push(item);
-    }
+  const selectedFact = resourceFacts.find(item => item.resource_id === focusedResourceId);
+  const selectedPath = focusedPath || (selectedFact?.path && selectedFact.locations?.some(location => location.project_id === project.id && location.status === 'active') ? path.relative(root, selectedFact.path).replaceAll('\\', '/') : null);
+  const focusDirectory = selectedPath && !selectedPath.startsWith('../') && !path.isAbsolute(selectedPath) ? path.posix.dirname(selectedPath).replace(/^\.$/u, '') : null;
+  let browseFolder = focusDirectory ?? requestedFolder ?? '';
+  let listed;
+  try { listed = browseProjectFiles(root, browseFolder); }
+  catch (error) {
+    if (error.code !== 'ENOENT' || focusDirectory === null || requestedFolder !== null) throw error;
+    browseFolder = '';
+    listed = browseProjectFiles(root);
   }
+  const folders = listProjectFolders(root, browseFolder);
+  const requestedFolderExists = requestedFolder === browseFolder;
+  const visibleItems = listed.items.filter(item => item.kind === 'file');
   const sessionTimes = workSessionTimes(workSessions);
   const readContext = resourceReadContext(resourceFacts);
+  readContext.metadataOnly = true;
   const records = visibleItems.map((item) => {
     const record = resourceRecord(item, root, recentWork, project.id, savedWork, currentActivity, resourceFacts, sessionTimes, readContext);
     return { ...record, state: resourceState(record) };
@@ -337,7 +342,7 @@ export function buildProjectResourcesModel({ project, root, base, recentWork, sa
     ? ledgerRelativePath
     : null;
   const focusedPathRecord = ledgerFocus && !diskLedgerFocus && (explicitFocus || ledgerPathInsideProject)
-    ? focusedRecord(root, explicitFocus ? focusedPath : ledgerPathInsideProject, recentWork, project.id, savedWork, currentActivity, resourceFacts, sessionTimes)
+    ? focusedRecord(root, explicitFocus ? focusedPath : ledgerPathInsideProject, recentWork, project.id, savedWork, currentActivity, resourceFacts, sessionTimes, readContext)
     : null;
   const verifiedPathLedgerFocus = focusedPathRecord?.resource_id === ledgerFocus?.resource_id ? focusedPathRecord : null;
   const localLedgerFocus = diskLedgerFocus ?? verifiedPathLedgerFocus;
@@ -346,13 +351,13 @@ export function buildProjectResourcesModel({ project, root, base, recentWork, sa
     : { ...ledgerFocus, name: ledgerFocus.resource?.display_name ?? ledgerFocus.name ?? 'Resource', type: ledgerFocus.resource?.kind ?? 'Local file', relative_path: null, open_available: false, state: ledgerFocus.status, last_known_path: ledgerFocus.path, last_known_hash: ledgerFocus.content_hash, last_known_bytes: ledgerFocus.bytes, last_known_modified_at: ledgerFocus.modified_at }
     : explicitFocus
     ? records.find((item) => item.relative_path === focusedPath)
-      ?? focusedRecord(root, focusedPath, recentWork, project.id, savedWork, currentActivity, resourceFacts, sessionTimes)
+      ?? focusedRecord(root, focusedPath, recentWork, project.id, savedWork, currentActivity, resourceFacts, sessionTimes, readContext)
     : null;
   const focused = focused_resource ? { ...focused_resource, redo_save: redoSave ? { save_id: redoSave.save_id ?? redoSave.work_id } : null, actions: recoveryActions(focused_resource, project.id), representation: representationFor(focused_resource, stateDir) } : null;
   const resultWorkId = focused?.saved_work?.parameters?.work_session_id ?? null;
   const relatedWork = focused ? workSessions.filter((work) => work.session_id === resultWorkId || work.sources?.some((source) => source.resource_id === focused.resource_id)).map((work) => {
     const result = work.latest_save_id ? savedWork.find((item) => item.work_id === work.latest_save_id || item.save_id === work.latest_save_id) ?? null : null;
-    const resultFreshness = result ? savedResultFreshness(result, { sourceFreshness: work.freshness, versionPolicy: sourceVersionPolicy(work.sources, result.version_policy) }) : null;
+    const resultFreshness = result ? { status: 'not_checked', label: 'Result not checked', version_policy: sourceVersionPolicy(work.sources, result.version_policy) } : null;
     return {
       session_id: work.session_id,
       intent: work.intent ?? null,
@@ -387,7 +392,7 @@ export function buildProjectResourcesModel({ project, root, base, recentWork, sa
     focused_resource: focused ? { ...focused, related_work: relatedWork, impact_lanes: impactLanes } : focused,
     selected_folder_path,
     selected_folder_explicit: explicitFocus || requestedFolder !== null,
-    selected_folder_loaded: !listed.truncated || (requestedFolderExists && requestedFolder === selected_folder_path),
+    selected_folder_loaded: true,
     focus_error: (explicitFocus || focusedResourceId) && !focused ? 'The requested Resource is unavailable. It may have moved or been removed.' : null,
     external_references: resourceFacts.filter((item) => item.relationship_to_project === 'used_by' && !item.locations?.some((location) => location.project_id === project.id && location.status === 'active')),
     missing_resources: resourceFacts.filter((item) => !item.missing_record_archived && (item.resource?.status === 'missing' || item.last_known_location?.status === 'missing')),
@@ -396,8 +401,34 @@ export function buildProjectResourcesModel({ project, root, base, recentWork, sa
     work_session: workSession,
     missing_sources: missingSources(savedWork),
     saved_work_error: savedWorkError,
-    truncated: listed.truncated,
+    truncated: true,
+    folder_truncated: listed.truncated,
   };
+}
+
+// Reader already resolved and read one Resource. Assemble its context from that
+// identity and existing metadata, without browsing the Project or hashing peers.
+export function buildReaderResourceContext({ project, base, reader, resourceFact, savedWork = [], workSessions = [] }) {
+  if (reader.project_id !== project.id || resourceFact.resource_id !== reader.resource_id) throw new Error('Reader context identity changed.');
+  const saved = savedWork.find(item => item.resource_id === reader.resource_id) ?? null;
+  const resource = {
+    ...resourceFact, resource_fact: resourceFact, name: reader.name, relative_path: reader.relative_path,
+    type: resourceType(reader.relative_path), bytes: reader.bytes, open_available: Boolean(reader.relative_path),
+    actions: recoveryActions(resourceFact, project.id), state: resourceFact.external_change?.status,
+    saved_work: saved ? { ...saved, sources: saved.sources ?? [], recipe: saved.recipe ?? null } : null,
+    relationship_focus: null,
+  };
+  const resultWorkId = saved?.parameters?.work_session_id;
+  resource.related_work = workSessions.filter(work => work.session_id === resultWorkId || work.sources?.some(source => source.resource_id === reader.resource_id)).map(work => {
+    const result = work.latest_save_id ? savedWork.find(item => item.work_id === work.latest_save_id || item.save_id === work.latest_save_id) : null;
+    const freshness = result ? savedResultFreshness(result, { sourceFreshness: work.freshness, versionPolicy: sourceVersionPolicy(work.sources, result.version_policy) }) : null;
+    return { session_id: work.session_id, intent: work.intent, revision: work.revision,
+      recipe_label: `Recipe v${work.recipe?.version ?? 1}`, freshness_label: work.freshness?.label ?? 'Not checked',
+      result_label: result ? `${path.basename(result.result_path)} · ${freshness.label}` : 'No saved Result',
+      result_freshness: freshness?.label ?? null, updated_at: work.updated_at,
+      href: `/work/${encodeURIComponent(work.session_id)}`, reuse_action: `/work/${encodeURIComponent(work.session_id)}/reuse` };
+  });
+  return { project, base, focused_resource: resource };
 }
 
 export function buildProjectResourceDetailModel({ project, root, base, recentWork, savedWork = [], currentActivity = [], resourceFacts = [], workSessions = [], relativePath }) {

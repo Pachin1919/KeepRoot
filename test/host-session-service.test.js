@@ -76,6 +76,28 @@ test('actual-access acknowledgement is required and stale Handoff is rejected be
   assert.equal(f.clients[0].calls.some(([method]) => method === 'turn/start'), false); assert.equal(f.clients[0].closed, true);
 });
 
+test('completed assistant text is retained without deltas, duplication or cross-turn mixing', async t => {
+  const f = fixture(t); const session = await f.service.start('PRJ-a', f.request); const client = f.clients[0];
+  const item = { type: 'agentMessage', id: 'item-1', text: '完整回答' };
+  const notify = (threadId, turnId, value) => client.emit('notification', { method: 'item/completed', params: { threadId, turnId, item: value } });
+  notify('other', 'turn-1', item); notify('thread-1', 'other', item);
+  assert.equal(f.service.events('PRJ-a', session.session_id).events.filter(e => e.kind === 'message').length, 0);
+  notify('thread-1', 'turn-1', item); notify('thread-1', 'turn-1', item);
+  client.emit('notification', { method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed', items: [item] } } });
+  assert.equal(f.service.events('PRJ-a', session.session_id).events.filter(e => e.kind === 'message').map(e => e.text).join(''), '完整回答');
+  const streamed = fixture(t); const second = await streamed.service.start('PRJ-a', streamed.request); const c = streamed.clients[0];
+  c.delta('完整'); c.emit('notification', { method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed', items: [item] } } });
+  assert.equal(streamed.service.events('PRJ-a', second.session_id).events.filter(e => e.kind === 'message').map(e => e.text).join(''), '完整回答');
+});
+
+test('completed text conflicting with streamed text stops with unknown outcome', async t => {
+  const f = fixture(t); const session = await f.service.start('PRJ-a', f.request); const c = f.clients[0];
+  c.delta('原文'); c.emit('notification', { method: 'item/completed', params: { threadId: 'thread-1', turnId: 'turn-1', item: { type: 'agentMessage', id: 'item-1', text: '另一份文本' } } });
+  assert.equal(f.service.show('PRJ-a', session.session_id).status, 'outcome_unknown');
+  assert.equal(f.service.events('PRJ-a', session.session_id).events.filter(e => e.kind === 'message').map(e => e.text).join(''), '原文');
+  assert.equal(c.closed, true);
+});
+
 test('simulated permissions deny only the current request and cancellation requires terminal evidence', async t => {
   const f = fixture(t); const session = await f.service.start('PRJ-a', f.request); const client = f.clients[0];
   for (const [index, method] of ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval'].entries()) {

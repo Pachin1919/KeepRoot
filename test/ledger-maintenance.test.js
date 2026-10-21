@@ -4,12 +4,41 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { LATEST_SCHEMA_VERSION } from '../src/ledger.js';
+import { Ledger, LATEST_SCHEMA_VERSION } from '../src/ledger.js';
 import { listLedgerBackups, ledgerFileHash, restoreLedgerBackup } from '../src/ledger-maintenance.js';
 import { Tracker } from '../src/tracker.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tempRoot = path.join(projectRoot, 'test', '.tmp');
+
+test('Ledger startup diagnostics uses an explicit quick check while doctor keeps the full check', () => {
+  const ledger = Object.create(Ledger.prototype);
+  ledger.stateDir = path.join(tempRoot, 'startup-diagnostics-no-state');
+  ledger.dbPath = path.join(ledger.stateDir, 'ledger.sqlite');
+  const queries = [];
+  let messages = ['ok'];
+  ledger.db = {
+    prepare(sql) {
+      queries.push(sql);
+      if (sql === 'PRAGMA user_version') return { get: () => ({ user_version: LATEST_SCHEMA_VERSION }) };
+      if (sql === 'PRAGMA journal_mode') return { get: () => ({ journal_mode: 'wal' }) };
+      const key = sql.slice('PRAGMA '.length);
+      return { all: () => messages.map((message) => ({ [key]: message })) };
+    },
+  };
+  const startup = ledger.diagnostics({ integrityCheck: 'quick' });
+  assert.equal(startup.integrity, 'ok');
+  assert.equal(startup.integrity_check, 'quick');
+  assert.ok(queries.includes('PRAGMA quick_check'));
+  assert.ok(!queries.includes('PRAGMA integrity_check'));
+  messages = ['database page is corrupt'];
+  assert.equal(ledger.diagnostics({ integrityCheck: 'quick' }).integrity, 'failed');
+  queries.length = 0;
+  messages = ['ok'];
+  assert.equal(ledger.diagnostics().integrity_check, 'full');
+  assert.ok(queries.includes('PRAGMA integrity_check'));
+  assert.throws(() => ledger.diagnostics({ integrityCheck: 'skip' }), /integrity check/u);
+});
 
 function freshCase(name) {
   const caseRoot = path.join(tempRoot, name);

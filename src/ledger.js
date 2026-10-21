@@ -90,7 +90,9 @@ export class Ledger {
       }
       this.db.exec('PRAGMA foreign_keys = ON;');
       this.db.exec('PRAGMA journal_mode = WAL;');
-      this.#initializeSchema();
+      // The committed schema stamp is written only after migration succeeds.
+      // Current databases do not need legacy table scans on every connection.
+      if (currentVersion < LATEST_SCHEMA_VERSION) this.#initializeSchema();
       if (currentVersion > 0 && currentVersion < LEGACY_TASK_REMOVAL_SCHEMA_VERSION) {
         this.db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
         this.db.exec('VACUUM;');
@@ -1911,10 +1913,36 @@ export class Ledger {
     `).all().map((row) => this.#resolveBlobPath(row.blob_path, row.content_hash));
   }
 
-  diagnostics() {
+  diagnostics({ integrityCheck = 'full' } = {}) {
+    if (!['full', 'quick'].includes(integrityCheck)) {
+      throw new Error('Ledger integrity check must be full or quick.');
+    }
     const schemaVersion = this.db.prepare('PRAGMA user_version').get().user_version;
-    const integrityRows = this.db.prepare('PRAGMA integrity_check').all();
-    const integrityMessages = integrityRows.map((row) => row.integrity_check);
+    // Startup still checks database structure. Doctor additionally checks UNIQUE
+    // constraints and index/table consistency with the full integrity check.
+    const pragma = integrityCheck === 'quick' ? 'quick_check' : 'integrity_check';
+    // This is still the complete quick check. Temporarily map reads instead of
+    // issuing one filesystem read per database page; release the view afterwards.
+    let previousMmap = null;
+    if (integrityCheck === 'quick') {
+      try {
+        previousMmap = this.db.prepare('PRAGMA mmap_size').get().mmap_size;
+        if (Number.isSafeInteger(previousMmap) && previousMmap >= 0) {
+          this.db.exec('PRAGMA mmap_size = 1073741824;');
+        } else previousMmap = null;
+      } catch {
+        // Builds without mapped I/O still perform the same integrity scan.
+      }
+    }
+    let integrityRows;
+    try {
+      integrityRows = this.db.prepare(`PRAGMA ${pragma}`).all();
+    } finally {
+      if (Number.isSafeInteger(previousMmap) && previousMmap >= 0) {
+        this.db.exec(`PRAGMA mmap_size = ${previousMmap};`);
+      }
+    }
+    const integrityMessages = integrityRows.map((row) => row[pragma]);
     const journalMode = this.db.prepare('PRAGMA journal_mode').get().journal_mode;
     const backupDir = path.join(this.stateDir, 'backups');
     const migrationBackups = fs.existsSync(backupDir)
@@ -1925,6 +1953,7 @@ export class Ledger {
       schema_version: schemaVersion,
       supported_schema_version: LATEST_SCHEMA_VERSION,
       journal_mode: journalMode,
+      integrity_check: integrityCheck,
       integrity: integrityMessages.length === 1 && integrityMessages[0] === 'ok' ? 'ok' : 'failed',
       integrity_messages: integrityMessages,
       migration_backups: migrationBackups,

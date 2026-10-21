@@ -13,6 +13,20 @@ const model = (overrides = {}) => ({ project: { id: 'P-reader', name: 'Reader Pr
   reader: { project_id: 'P-reader', resource_id: 'R-one', name: 'sample.md', relative_path: 'notes/sample.md', sha256: 'abc123', bytes: 20, kind: 'markdown', text: '# Title\n\nReadable body.' }, ...overrides });
 const render = (value, locale = 'en') => renderResourceReaderView(value, { csrfToken: 'csrf-reader', locale });
 
+test('Reader distinguishes missing files from unsupported binary previews and readable JSON', () => {
+  const html = render(model({resources:[
+    {resource_id:'missing',name:'gone.md',relative_path:'gone.md',status:'missing'},
+    {resource_id:'binary',name:'bundle.zip',relative_path:'bundle.zip'},
+    {resource_id:'json',name:'manifest.json',relative_path:'manifest.json'},
+  ]}));
+  assert.match(html, /<details class="reader-file-group reader-file-exceptions"><summary><span class="reader-folder-label">Unavailable files<\/span>[^]*?<span class="reader-file-link is-unavailable"[^>]*><strong>gone.md/u);
+  assert.match(html, /<span class="reader-file-link is-unsupported"[^>]*><strong>bundle.zip/u);
+  assert.match(html, /class="reader-file-link"[^>]*aria-label="manifest.json — manifest.json"/u);
+  const source = render(model({reader:{...model().reader,name:'page.html',relative_path:'page.html',kind:'text',text:'<script>alert(1)</script>'}}));
+  assert.match(source, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/u);
+  assert.doesNotMatch(source, /<script>alert\(1\)<\/script>/u);
+});
+
 test('Reader separates document commands and view controls while preserving live toggle names and targets', () => {
   const html = render(model(), 'zh-CN');
   const toolbar = html.match(/<header class="reader-toolbar">([^]*?)<\/header>/u)?.[1];
@@ -63,13 +77,13 @@ test('Reader groups same-named resources by folder without losing identity, retu
     { resource_id: 'R-two', name: 'sample.md', relative_path: '02_成果/sample.md' },
     { resource_id: 'R-root', name: '<name>.txt', relative_path: '<name>.txt' },
   ] }), 'zh-CN');
-  assert.match(html, /class="reader-file-group"><h3 title="01_资料">01_资料/u);
-  assert.match(html, /class="reader-file-group"><h3 title="02_成果">02_成果/u);
+  assert.match(html, /<details class="reader-file-group" open><summary title="01_资料"><span class="reader-folder-label">01_资料/u);
+  assert.match(html, /<details class="reader-file-group" open><summary title="02_成果"><span class="reader-folder-label">02_成果/u);
   assert.match(html, /项目根目录/u);
   assert.match(html, /title="02_成果\/sample.md" aria-label="sample.md — 02_成果\/sample.md"/u);
   assert.match(html, /&lt;name&gt;\.txt/u);
   assert.doesNotMatch(html, /<name>/u);
-  const urls = [...html.matchAll(/<a href="([^"]+resources\/read\?[^"]+)" title=/gu)].map(match => new URL(match[1].replaceAll('&amp;', '&'), 'http://atlas.local'));
+  const urls = [...html.matchAll(/<a class="reader-file-link" href="([^"]+resources\/read\?[^"]+)" title=/gu)].map(match => new URL(match[1].replaceAll('&amp;', '&'), 'http://atlas.local'));
   assert.deepEqual(new Set(urls.map(url => url.searchParams.get('resource_id'))), new Set(['R-one', 'R-two', 'R-root']));
   assert.ok(urls.every(url => url.searchParams.get('return_to') === returnHref));
   assert.match(html, /aria-current="page"><strong>sample.md/u);

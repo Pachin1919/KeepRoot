@@ -114,7 +114,10 @@ function assertOutsideLibraries(installRoot, stateDir, libraryRoots) {
 
 function copyRuntime(sourceRoot, target) {
   fs.mkdirSync(target, { recursive: true });
-  for (const relative of ['assets', 'bin', 'src', 'schemas', 'python/src', 'python/pyproject.toml', 'package.json']) {
+  const notices = fs.existsSync(path.join(sourceRoot, 'LICENSE')) ? ['LICENSE'] : [];
+  // Preserve the original grant in installed copies; older source bundles may
+  // predate it. Bundled dependency notices remain inside assets/ and src/.
+  for (const relative of ['assets', 'bin', 'src', 'schemas', 'python/src', 'python/pyproject.toml', 'package.json', ...notices]) {
     const source = path.join(sourceRoot, relative);
     if (!fs.existsSync(source)) throw new Error(`Runtime source is incomplete: ${source}`);
     fs.cpSync(source, path.join(target, relative), {
@@ -129,7 +132,7 @@ function copyRuntime(sourceRoot, target) {
 }
 
 function copySkill(sourceRoot, target) {
-  const source = path.join(sourceRoot, '.agents', 'skills', 'atlas-file-governance');
+  const source = path.join(sourceRoot, '.agents', 'skills', 'keeproot');
   if (!fs.existsSync(path.join(source, 'SKILL.md'))) throw new Error(`Atlas Skill source is missing: ${source}`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.cpSync(source, target, { recursive: true, force: true });

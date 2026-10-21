@@ -20,7 +20,7 @@ test('demo guide offers actual local UI links, labels pending gates, and never e
     { capability: 'F1', title: '<script>bad()</script>', status: 'installed_disabled', href: '//external.test/run', expected: '不能运行' },
   ] }, { project: { id: 'PRJ-demo', name: '虚构演示' }, locale: 'zh-CN' });
   assert.match(html, /data-product-demo/u);
-  assert.match(html, /href="\/projects\/PRJ-demo\/resources\?resource_id=RES-source&amp;relation_depth=2"/u);
+  assert.match(html, /href="\/projects\/PRJ-demo\/resources\?resource_id=RES-source&amp;relation_depth=2&amp;graph=1"/u);
   assert.match(html, /第二款AI待验/u); assert.match(html, /试验默认关闭/u);
   assert.match(html, /href="\/work\/DWT-pivot">透视表<\/a>/u);
   assert.match(html, /href="\/work\/DWT-trend">月度趋势<\/a>/u);

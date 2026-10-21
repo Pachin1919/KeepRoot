@@ -12,9 +12,16 @@
     "test": "node --test --test-concurrency=1",
     "runtime": "node ./scripts/runtime-manager.js",
     "dev:isolated": "node ./scripts/dev-isolation.js",
-    "demo": "node ./scripts/demo.js"
+    "demo": "node ./scripts/demo.js",
+    "pretest:core": "node -e \"require('node:fs').mkdirSync('test/.tmp', { recursive: true })\"",
+    "test:core": "node --test --test-concurrency=1 test/project-registration.test.js test/project-registration-cli.test.js test/save-service.test.js test/round-recovery.test.js test/resource-reader.test.js test/resource-reader-large-text.test.js test/resource-reader-register.test.js test/resource-reader-view.test.js test/reader-inline-edit.test.js test/ledger-startup-schema.test.js test/resource-impact-service.test.js test/toolbox-demand-loading.test.js",
+    "pretest:install": "node -e \"require('node:fs').mkdirSync('test/.tmp', { recursive: true })\"",
+    "test:install": "node --test --test-concurrency=1 test/runtime-install.test.js",
+    "pretest:content": "node -e \"require('node:fs').mkdirSync('test/.tmp', { recursive: true })\"",
+    "test:content": "node --test --test-concurrency=1 test/resource-reader-docx.test.js test/table-work-module.test.js test/resource-focus-graph.test.js"
   },
   "engines": {
     "node": ">=24.0.0"
-  }
+  },
+  "license": "MIT"
 }

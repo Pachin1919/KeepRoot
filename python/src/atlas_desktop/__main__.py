@@ -196,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     storage_path.mkdir(parents=True, exist_ok=True)
     bridge = DesktopBridge(args.picker_registration_url, args.picker_token)
     window = webview.create_window(
-        "Atlas",
+        "Keeproot",
         url=args.url,
         width=max(args.width, 760),
         height=max(args.height, 560),

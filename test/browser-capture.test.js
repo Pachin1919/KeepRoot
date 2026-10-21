@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { BrowserCapture } from '../src/browser-capture.js';
-import { captureBrowserPage } from '../.agents/skills/atlas-file-governance/scripts/capture-browser-page.mjs';
+import { captureBrowserPage } from '../.agents/skills/keeproot/scripts/capture-browser-page.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cliPath = path.join(projectRoot, 'bin', 'atlas.js');

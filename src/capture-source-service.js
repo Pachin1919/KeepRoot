@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fetchPublicDocument } from './public-web-capture.js';
 import { RuntimeStorage } from './runtime-storage.js';
 import { BrowserCapture } from './browser-capture.js';
+import { captureHttpFetch } from './capture-network.js';
 import { diffChatGptConversations, inspectChatGptExport, normalizeChatGptConversation, selectChatGptExportConversation, verifyChatGptExportInput } from './chatgpt-export-capture.js';
 
 const PARSER_ID = 'atlas.public-web-source';
@@ -60,19 +61,20 @@ function assertNoLinks(root, target) {
 }
 function normalizeCapture(fetched, sourceUrl) {
   const capture = fetched.capture;
-  if (capture.capture_mode === 'chatgpt_share') {
+  if (['chatgpt_share','gemini_share'].includes(capture.capture_mode)) {
     const messages = (capture.messages ?? []).map((item, ordinal) => ({
       message_id: String(item.message_id ?? '').trim() || null,
       parent_message_id: String(item.parent_message_id ?? '').trim() || null,
-      ordinal, role: String(item.role ?? '').trim().toLowerCase(), content: normalizedText(item.content),
+      ordinal, role: String(item.role ?? '').trim().toLowerCase(), content: capture.capture_mode==='gemini_share'
+        ? String(item.content??'').replace(/\u0000/gu,'').replace(/\r\n?/gu,'\n').normalize('NFC') : normalizedText(item.content),
     })).filter((item) => item.content);
     if (!messages.length) return exportRequired(sourceUrl, fetched);
     const reliable = messages.every((item) => item.message_id)
       && new Set(messages.map((item) => item.message_id)).size === messages.length
       && capture.completeness === 'shared_linear_conversation_complete';
-    const readable = messages.map((item) => `## ${item.role === 'user' ? '用户' : item.role === 'assistant' ? 'ChatGPT' : item.role}\n\n${item.content}`).join('\n\n---\n\n');
+    const readable = messages.map((item) => `## ${item.role === 'user' ? '用户' : item.role === 'assistant' ? capture.capture_mode === 'gemini_share' ? 'Gemini' : 'ChatGPT' : item.role}\n\n${item.content}`).join('\n\n---\n\n');
     return {
-      capture_mode: 'chatgpt_share', capture_scope: capture.capture_scope,
+      capture_mode: capture.capture_mode, capture_scope: capture.capture_scope,
       completeness: reliable ? 'complete' : 'partial', stable_message_ids: reliable,
       normalized: { conversation_id: capture.conversation_id ?? null, messages }, readable,
       title: normalizedText(capture.title) || 'ChatGPT shared conversation', source_url: sourceUrl,
@@ -191,7 +193,7 @@ function requireLatestOutputVerified(versions) {
 }
 
 export class CaptureSourceService {
-  constructor({ stateDir, registry, saveService, fetchImpl = globalThis.fetch, lookupHost, now = () => new Date().toISOString() }) {
+  constructor({ stateDir, registry, saveService, fetchImpl = captureHttpFetch, lookupHost, now = () => new Date().toISOString() }) {
     if (!stateDir || !registry || !saveService) throw new Error('CaptureSourceService requires stateDir, Registry, and SaveService.');
     this.stateDir = path.resolve(stateDir); this.registry = registry; this.saveService = saveService;
     this.fetchImpl = fetchImpl; this.lookupHost = lookupHost; this.now = now;

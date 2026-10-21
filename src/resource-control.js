@@ -43,6 +43,33 @@ export class ResourceControl {
   projectResources(projectId, { refresh=false } = {}) {
     return this.#projectResources(projectId, { refresh });
   }
+  projectResourceSummaries(projectId) {
+    const data=this.ledger.resources.projectSummaryData(projectId);
+    const locations=new Map(), relationships=new Map(), archives=new Map();
+    for(const location of data.locations){
+      if(!locations.has(location.resource_id)) locations.set(location.resource_id,[]);
+      locations.get(location.resource_id).push(location);
+    }
+    for(const relationship of data.relationships){
+      if(!relationships.has(relationship.source_resource_id)) relationships.set(relationship.source_resource_id,[]);
+      relationships.get(relationship.source_resource_id).push(relationship);
+    }
+    for(const action of data.archiveActions) archives.set(action.resource_id,action);
+    return data.resources.map(resource=>{
+      const history=locations.get(resource.id)??[];
+      const projectLocation=history.find(item=>item.project_id===projectId&&item.status==='active')
+        ??history.find(item=>item.project_id===projectId&&item.status==='missing');
+      const location=projectLocation??history.find(item=>item.status==='active')??history.at(-1)??null;
+      const stored=Boolean(projectLocation);
+      const archive=archives.get(resource.id);
+      return {resource_id:resource.id,resource,locations:history,relationships:relationships.get(resource.id)??[],
+        relationship_to_project:stored?'stored_in':'used_by',relationship_label:stored?'Stored in':'Used by',
+        last_known_location:location,path:location?.path??null,content_hash:location?.content_hash??null,
+        bytes:location?.bytes??null,modified_at:location?.modified_at??null,status:location?.status??resource.status,
+        resource_status:resource.status,external_change:externalChange(location,null,null),
+        missing_record_archived:archive?.action_type==='archive_missing',missing_archive_batch_id:archive?.details?.batch_id??null};
+    });
+  }
   #projectResources(projectId, { refresh=false } = {}, resourceId=null) {
     const repo=this.ledger.resources;
     const scopedLocations=repo.locationsForProject(projectId).filter(item=>resourceId===null||item.resource_id===resourceId);
@@ -59,8 +86,10 @@ export class ResourceControl {
       }
       this.ledger.transaction(()=>{for(const item of checked){if(item.missing){repo.markLocationMissing(item.location.id,now());repo.refreshResourceStatus(item.location.resource_id,now());}else checks.set(item.location.id,item);}});
     }
+    const locationsByResource=new Map(ids.map(id=>[id,[]]));
+    for(const location of repo.locationsForResources(ids))locationsByResource.get(location.resource_id)?.push(location);
     return ids.map(resourceId=>{
-      const detail=repo.describe(resourceId);
+      const detail=repo.describe(resourceId,locationsByResource.get(resourceId));
       const projectLocation=detail.locations.find(item=>item.project_id===projectId&&item.status==='active')
         ??detail.locations.find(item=>item.project_id===projectId&&item.status==='missing');
       const relationship=currentRelationships.find(item=>item.id===resourceId&&item.type==='stored_in')??currentRelationships.find(item=>item.id===resourceId);

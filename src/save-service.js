@@ -9,9 +9,11 @@ import { projectResourceHref } from './resource-links.js';
 import { assertRecoveryWritable } from './storage/recovery-write-guard.js';
 import { verifyChatGptExportInput } from './chatgpt-export-capture.js';
 
-export function activeSavedResourcePath(db, projectId, resourceId, oldPath) {
+export function activeSavedResourcePath(db, projectId, resourceId, oldPath, locationsByResource = null) {
   if (resourceId) {
-    const matches = db.prepare("SELECT path FROM resource_locations WHERE resource_id=? AND project_id=? AND status='active' ORDER BY id").all(resourceId, projectId);
+    const matches = locationsByResource?.has(resourceId)
+      ? locationsByResource.get(resourceId).filter((location) => location.project_id === projectId && location.status === 'active')
+      : db.prepare("SELECT path FROM resource_locations WHERE resource_id=? AND project_id=? AND status='active' ORDER BY id").all(resourceId, projectId);
     return matches.length === 1 ? matches[0].path : oldPath;
   }
   if (!oldPath) return oldPath;
@@ -21,14 +23,17 @@ export function activeSavedResourcePath(db, projectId, resourceId, oldPath) {
   return matches.length === 1 ? matches[0].path : oldPath;
 }
 
-export function currentSavedResourceLocation(db, resourceId) {
+export function currentSavedResourceLocation(db, resourceId, locationsByResource = null) {
   if (!resourceId) return null;
-  const rows = db.prepare("SELECT * FROM resource_locations WHERE resource_id=? AND status='active' ORDER BY id").all(resourceId);
+  const rows = locationsByResource?.has(resourceId)
+    ? locationsByResource.get(resourceId).filter((location) => location.status === 'active')
+    : db.prepare("SELECT * FROM resource_locations WHERE resource_id=? AND status='active' ORDER BY id").all(resourceId);
   return rows.length === 1 ? rows[0] : null;
 }
 
 const journalPath = (stateDir) => path.join(path.resolve(stateDir), 'ui', 'saved-work.json');
 const now = () => new Date().toISOString();
+const JOURNAL_RENAME_WAIT = new Int32Array(new SharedArrayBuffer(4));
 
 function conflict(message) {
   const error = new Error(message);
@@ -53,7 +58,15 @@ function writeJournal(stateDir, items) {
   const temporary = `${target}.tmp-${process.pid}-${crypto.randomUUID()}`;
   try {
     fs.writeFileSync(temporary, `${JSON.stringify({ items }, null, 2)}\n`, 'utf8');
-    fs.renameSync(temporary, target);
+    // A Windows reader can briefly deny replacement. Retry only this atomic
+    // rename while the existing state lock holds; never remove the old journal.
+    for (let attempt = 0; ; attempt += 1) {
+      try { fs.renameSync(temporary, target); break; }
+      catch (error) {
+        if (process.platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || attempt >= 3) throw error;
+        Atomics.wait(JOURNAL_RENAME_WAIT, 0, 0, 15 * (2 ** attempt));
+      }
+    }
   } finally {
     fs.rmSync(temporary, { force: true });
   }
@@ -104,10 +117,14 @@ function normalizedToken(value, fallback = null) {
 }
 
 function projectResourcePath(projectPath, target) {
+  if (typeof projectPath !== 'string') throw conflict('Save target has no verified Project path.');
   const project = path.posix.normalize(String(projectPath ?? '').replaceAll('\\', '/'));
   const targetPath = path.posix.normalize(String(target ?? '').replaceAll('\\', '/'));
-  if (!project || project === '.' || project === '..' || project.startsWith('../') || path.posix.isAbsolute(project)
-    || !targetPath || path.posix.isAbsolute(targetPath) || !targetPath.startsWith(`${project}/`)) throw conflict('Save target is outside the verified Project path.');
+  // Root-level location binding is verified by Intake/Derived before target
+  // facts are projected. Keep this relative-path check strict about escapes.
+  if (!project || project === '..' || project.startsWith('../') || path.posix.isAbsolute(project)
+    || !targetPath || path.posix.isAbsolute(targetPath)
+    || project !== '.' && !targetPath.startsWith(`${project}/`)) throw conflict('Save target is outside the verified Project path.');
   const relative = path.posix.relative(project, targetPath);
   if (!relative || path.posix.isAbsolute(relative) || relative === '..' || relative.startsWith('../')) throw conflict('Save target is outside the verified Project path.');
   return relative;
@@ -160,6 +177,19 @@ function result(row) {
 }
 
 export class SaveService {
+  #targetFacts(root, projectPath, target, projectId) {
+    if (projectPath === '' || projectPath === '.') {
+      const context = this.intake.derived?.projectContext;
+      const location = context?.getActiveLocation(projectId);
+      const adopted = location && context.getRoot(location.root_id).root.governance_status === 'adopted';
+      if (!adopted || path.resolve(location.root_path, location.relative_path)
+        .localeCompare(path.resolve(root), undefined, { sensitivity: 'accent' }) !== 0) {
+        throw conflict('Save target has no verified Root-level Project location.');
+      }
+    }
+    return projectTargetFacts(root, projectPath, target);
+  }
+
   constructor({ stateDir, intake = null, writeJournalFn = writeJournal, resourceControl = null }) {
     this.stateDir = path.resolve(stateDir);
     this.intake = intake ?? new Intake({ stateDir: this.stateDir });
@@ -330,7 +360,7 @@ export class SaveService {
       if (detail.run.id !== claim.save_id || detail.run.root_path !== stored.root || detail.candidate?.target_path !== stored.target || detail.candidate?.content_hash !== stored.candidate_hash || detail.placement?.project_id !== stored.project_id) throw conflict('The reserved save run does not match its immutable request facts.');
       const projectPath = detail.placement?.project_path;
       const target = detail.candidate?.target_path;
-      const targetFacts = projectTargetFacts(stored.root, projectPath, target);
+      const targetFacts = this.#targetFacts(stored.root, projectPath, target, stored.project_id);
       const project = { id: detail.placement.project_id, name: detail.placement.project_name ?? '' };
       if (detail.run.status === 'executed' && detail.execution_receipt?.verified) {
         const committing = mutate(this.stateDir, claim.save_id, (latest) => (latest?.status === 'reserving' && latest.owner_pid === claim.owner_pid && latest.owner_token === claim.owner_token
@@ -343,7 +373,7 @@ export class SaveService {
     }
     if (detail?.status !== 'prepared' || detail.run_id !== claim.save_id) throw conflict('The reserved save has an existing run that cannot be recovered yet.');
     const project = { id: detail.project.id, name: detail.project.name };
-    const target = projectTargetFacts(claim.prepare_request.root, detail.project.path, detail.target);
+    const target = this.#targetFacts(claim.prepare_request.root, detail.project.path, detail.target, project.id);
     const row = { ...claim, status: 'prepared', project, target, resources_href: projectResourceHref(`/projects/${encodeURIComponent(project.id)}`, target.resource_path), owner_pid: null, owner_token: null };
     return mutate(this.stateDir, claim.save_id, (latest) => (latest?.status === 'reserving' && latest.owner_pid === claim.owner_pid && latest.owner_token === claim.owner_token ? row : latest), this.writeJournal);
     } catch (error) {
@@ -452,7 +482,7 @@ export class SaveService {
     });
       if (prepared.status !== 'prepared' || prepared.run_id !== saveId) throw new Error(prepared.reason ?? 'Atlas could not prepare this save.');
       const project = { id: prepared.project.id, name: prepared.project.name };
-      const target = projectTargetFacts(normalized.root, prepared.project.path, prepared.target);
+      const target = this.#targetFacts(normalized.root, prepared.project.path, prepared.target, project.id);
       const row = {
         save_id: saveId, run_id: saveId, status: 'prepared', channel, caller, project,
         target, candidate, request_key,
@@ -525,18 +555,46 @@ export class SaveService {
   }
 
   // Read projection only. Original Save, Intake journal and verification receipts stay immutable.
-  projectRecord(row) {
+  projectRecords(rows, { projectIds = null } = {}) {
+    const wanted=projectIds===null ? null : new Set(projectIds);
+    if (!fs.existsSync(path.join(this.stateDir, 'ledger.sqlite'))) return wanted ? rows.filter(row=>wanted.has(row.project?.id)) : rows;
+    this.resourceControl ??= createResourceControl({ stateDir: this.stateDir });
+    const resources = this.resourceControl.ledger.resources;
+    const context = { resourceIds: new Map(), locationsByResource: new Map(), projects: new Map(), projectLocations: new Map() };
+    for (const row of rows) {
+      if (!row?.project?.id) continue;
+      const resourceId = row.resource_id ?? resources.bySave(row.save_id)?.id;
+      context.resourceIds.set(row, resourceId);
+      for (const id of [resourceId, row.source?.resource_id, ...(row.source?.sources ?? []).map((source) => source?.resource_id)]) {
+        if (id) context.locationsByResource.set(id, []);
+      }
+    }
+    for (const location of resources.locationsForResources([...context.locationsByResource.keys()])) {
+      context.locationsByResource.get(location.resource_id).push(location);
+    }
+    // This context belongs to this read only. Later requests must read current locations again.
+    const selected=wanted ? rows.filter(row=>{
+      const resourceId=context.resourceIds.get(row);
+      const location=currentSavedResourceLocation(this.resourceControl.ledger.db,resourceId,context.locationsByResource);
+      return wanted.has(location?.project_id??row.project?.id);
+    }) : rows;
+    return selected.map((row) => this.projectRecord(row, context));
+  }
+
+  projectRecord(row, context = null) {
     if (!row?.project?.id || !fs.existsSync(path.join(this.stateDir, 'ledger.sqlite'))) return row;
     this.resourceControl ??= createResourceControl({ stateDir: this.stateDir });
     const db = this.resourceControl.ledger.db;
-    const resourceId = row.resource_id ?? this.resourceControl.ledger.resources.bySave(row.save_id)?.id;
-    const currentLocation = currentSavedResourceLocation(db, resourceId);
+    const resourceId = context?.resourceIds.has(row) ? context.resourceIds.get(row) : row.resource_id ?? this.resourceControl.ledger.resources.bySave(row.save_id)?.id;
+    const currentLocation = currentSavedResourceLocation(db, resourceId, context?.locationsByResource);
     const projectId = currentLocation?.project_id ?? row.project.id;
-    const project = db.prepare('SELECT * FROM projects WHERE id=?').get(projectId);
-    const projectLocations = db.prepare("SELECT l.relative_path,r.current_path AS root_path FROM project_locations l JOIN portfolio_roots r ON r.id=l.root_id WHERE l.project_id=? AND l.status='active'").all(projectId);
+    if (context && !context.projects.has(projectId)) context.projects.set(projectId, db.prepare('SELECT * FROM projects WHERE id=?').get(projectId));
+    if (context && !context.projectLocations.has(projectId)) context.projectLocations.set(projectId, db.prepare("SELECT l.relative_path,r.current_path AS root_path FROM project_locations l JOIN portfolio_roots r ON r.id=l.root_id WHERE l.project_id=? AND l.status='active'").all(projectId));
+    const project = context ? context.projects.get(projectId) : db.prepare('SELECT * FROM projects WHERE id=?').get(projectId);
+    const projectLocations = context ? context.projectLocations.get(projectId) : db.prepare("SELECT l.relative_path,r.current_path AS root_path FROM project_locations l JOIN portfolio_roots r ON r.id=l.root_id WHERE l.project_id=? AND l.status='active'").all(projectId);
     const projectLocation = projectLocations.length === 1 ? projectLocations[0] : null;
     const projectRoot = projectLocation ? path.resolve(projectLocation.root_path, projectLocation.relative_path) : null;
-    const active = (resourceId, oldPath) => activeSavedResourcePath(db, projectId, resourceId, oldPath);
+    const active = (resourceId, oldPath) => activeSavedResourcePath(db, projectId, resourceId, oldPath, context?.locationsByResource);
     const source = (item) => {
       if (!item) return item;
       const currentPath = active(item.resource_id, item.path);

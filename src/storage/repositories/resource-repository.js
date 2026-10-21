@@ -9,6 +9,16 @@ export class ResourceRepository {
   byArtifact(artifactId) { const r = this.db.prepare('SELECT r.* FROM resource_save_links l JOIN resources r ON r.id=l.resource_id WHERE l.artifact_id=?').get(artifactId); return resource(r); }
   byPath(filePath) { const r = this.db.prepare(`SELECT r.* FROM resource_locations l JOIN resources r ON r.id=l.resource_id WHERE l.path=? COLLATE NOCASE AND l.status='active'`).get(filePath); return resource(r); }
   locations(resourceId) { return this.db.prepare('SELECT * FROM resource_locations WHERE resource_id=? ORDER BY valid_from,id').all(resourceId).map(resource); }
+  locationsForResources(resourceIds) {
+    const ids = [...new Set(resourceIds)];
+    const rows = [];
+    for (let offset = 0; offset < ids.length; offset += 400) {
+      const chunk = ids.slice(offset, offset + 400);
+      const marks = chunk.map(() => '?').join(',');
+      rows.push(...this.db.prepare(`SELECT * FROM resource_locations WHERE resource_id IN (${marks}) ORDER BY valid_from,id`).all(...chunk).map(resource));
+    }
+    return rows;
+  }
   locationsForProject(projectId) { return this.db.prepare(`SELECT l.*, r.id AS resource_id, r.kind, r.status AS resource_status, r.display_name FROM resource_locations l JOIN resources r ON r.id=l.resource_id WHERE l.project_id=? ORDER BY l.path`).all(projectId).map(resource); }
   relationshipResourcesForProject(projectId) { return this.db.prepare(`SELECT r.*, rr.id AS relationship_id, rr.type, rr.status AS relationship_status FROM resource_relationships rr JOIN resources r ON r.id=rr.source_resource_id WHERE rr.target_kind='project' AND rr.target_id=? AND rr.status='active' AND rr.type IN ('stored_in','used_by')`).all(projectId).map(resource); }
   activeLocations() { return this.db.prepare("SELECT * FROM resource_locations WHERE status='active'").all().map(resource); }
@@ -17,8 +27,21 @@ export class ResourceRepository {
   assignLocationProject(id, projectId, displayName) { assertRecoveryWritable(this.db, { locationId: id }); this.db.prepare('UPDATE resource_locations SET project_id=COALESCE(project_id,?),display_name=? WHERE id=?').run(projectId, displayName, id); return this.db.prepare('SELECT * FROM resource_locations WHERE id=?').get(id); }
   markLocationMissing(id, at) { assertRecoveryWritable(this.db, { locationId: id }); this.db.prepare("UPDATE resource_locations SET status='missing',valid_to=? WHERE id=? AND status='active'").run(at,id); }
   refreshResourceStatus(resourceId, at) { assertRecoveryWritable(this.db, { resourceId }); const active=this.db.prepare("SELECT COUNT(*) AS count FROM resource_locations WHERE resource_id=? AND status='active'").get(resourceId).count; this.db.prepare('UPDATE resources SET status=?,updated_at=? WHERE id=?').run(active?'active':'missing',at,resourceId); }
-  describe(resourceId) { const value=this.db.prepare('SELECT * FROM resources WHERE id=?').get(resourceId); if(!value) return null; return { resource:resource(value), locations:this.locations(resourceId), relationships:this.listRelationships(resourceId) }; }
+  describe(resourceId, knownLocations = null) { const value=this.db.prepare('SELECT * FROM resources WHERE id=?').get(resourceId); if(!value) return null; return { resource:resource(value), locations:knownLocations ?? this.locations(resourceId), relationships:this.listRelationships(resourceId) }; }
   byId(resourceId) { return resource(this.db.prepare('SELECT * FROM resources WHERE id=?').get(resourceId)); }
+  projectSummaryData(projectId) {
+    // Recorded facts for browsing. One set read per table, no file verification or
+    // per-Resource action/relationship history. Writes continue to use describe().
+    const ids = `SELECT resource_id FROM resource_locations WHERE project_id=? AND status IN ('active','missing')
+      UNION SELECT source_resource_id FROM resource_relationships WHERE target_kind='project' AND target_id=? AND status='active' AND type='used_by'`;
+    const resources = this.db.prepare(`SELECT * FROM resources WHERE id IN (${ids}) ORDER BY id`).all(projectId, projectId).map(resource);
+    const locations = this.db.prepare(`SELECT * FROM resource_locations WHERE resource_id IN (${ids}) ORDER BY valid_from,id`).all(projectId, projectId).map(resource);
+    const relationships = this.db.prepare("SELECT * FROM resource_relationships WHERE target_kind='project' AND target_id=? AND status='active' AND type IN ('stored_in','used_by')").all(projectId)
+      .map(row=>({...row,submitter:parse(row.submitter_json),evidence:parse(row.evidence_json)}));
+    const archiveActions = this.db.prepare("SELECT * FROM resource_actions WHERE action_type IN ('archive_missing','restore_missing') AND json_extract(details_json,'$.project_id')=? ORDER BY created_at,id").all(projectId)
+      .map(row=>({...row,details:parse(row.details_json)}));
+    return {resources,locations,relationships,archiveActions};
+  }
   relationshipById(id) { const value=this.db.prepare('SELECT * FROM resource_relationships WHERE id=?').get(id); return value&&{...value,submitter:parse(value.submitter_json),evidence:parse(value.evidence_json)}; }
   updateRelationshipStatus(id,status) { assertRecoveryWritable(this.db, { resourceId: this.relationshipById(id)?.source_resource_id }); const changed=this.db.prepare("UPDATE resource_relationships SET status=? WHERE id=? AND status='active'").run(status,id).changes; if(changed!==1) throw new Error('Relationship is unavailable.'); return this.relationshipById(id); }
   recordAction({id=null,resourceId,type,details,at}) { assertRecoveryWritable(this.db, { resourceId }); id=id??`RACT-${crypto.randomUUID()}`; this.db.prepare("INSERT INTO resource_actions(id,resource_id,action_type,details_json,created_at,status) VALUES(?,?,?,?,?,'completed')").run(id,resourceId,type,JSON.stringify(details),at); return {id,resource_id:resourceId,action_type:type,details,created_at:at,status:'completed'}; }

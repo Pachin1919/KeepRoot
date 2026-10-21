@@ -1,4 +1,7 @@
 import http from 'node:http';
+import https from 'node:https';
+import { Readable } from 'node:stream';
+import { createGunzip, createInflate, createBrotliDecompress } from 'node:zlib';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -70,3 +73,36 @@ export function createCaptureNetworkConfigurator({platform=process.platform,env=
 }
 
 export const configureCaptureNetwork = createCaptureNetworkConfigurator();
+
+// Google public pages exceed fetch's default 16 KiB response-header budget.
+// Keep a bounded 64 KiB header budget and stream bodies into the existing byte
+// limit. Uses the same Node proxy configuration; never retries directly.
+export function captureHttpFetch(url, options = {}) {
+  return new Promise((resolve,reject)=>{
+    const protocol=new URL(url).protocol;
+    if(!['http:','https:'].includes(protocol)){reject(new Error('Unsupported capture protocol'));return;}
+    const request=(protocol==='https:'?https:http).request(url,{
+      method:options.method??'GET',headers:{'accept-encoding':'identity',...options.headers},
+      maxHeaderSize:64*1024,signal:options.signal,
+    },response=>{
+      const headers=new Headers();
+      for(const [key,value] of Object.entries(response.headers)){
+        if(value!==undefined) headers.set(key,Array.isArray(value)?value.join(', '):value);
+      }
+      let body=response;
+      const encoding=headers.get('content-encoding');
+      if(['gzip','deflate','br'].includes(encoding)){
+        body=encoding==='gzip'?createGunzip():encoding==='br'?createBrotliDecompress():createInflate();
+        response.on('error',error=>body.destroy(error));response.pipe(body);
+        body.on('close',()=>response.destroy());
+        headers.delete('content-encoding');headers.delete('content-length');
+      }
+      try{resolve(new Response([204,205,304].includes(response.statusCode)?null:Readable.toWeb(body),{
+        status:response.statusCode,headers,
+      }));}catch(error){response.destroy();reject(error);}
+    });
+    request.on('error',reject);
+    if(options.body!==undefined) request.write(options.body);
+    request.end();
+  });
+}

@@ -2,8 +2,41 @@ export const ATLAS_VERSION = '2.0.0-preview.1';
 export const PROTOCOL_VERSION = 'atlas-cli.v1';
 export const MODULE_PROTOCOL_VERSION = 'atlas.module.v1';
 
+export const PROJECT_REGISTRATION_REQUEST_SCHEMAS = Object.freeze({
+  prepare: {
+    type: 'object', required: ['path', 'requestKey', 'caller'],
+    properties: {
+      path: { type: 'string', description: 'Absolute existing Project directory; every ancestor must be unlinked.' },
+      name: { type: 'string', description: 'Optional display name; defaults to directory basename.' },
+      rootPolicy: { type: 'string', enum: ['project_only'], default: 'project_only' },
+      requestKey: { type: 'string', minLength: 1, maxLength: 256 },
+      caller: { type: 'object', required: ['actor', 'tool', 'client_run_id'], properties: { actor: { enum: ['agent', 'user'] }, tool: { type: 'string', minLength: 1 }, client_run_id: { type: 'string', minLength: 1 } } },
+    },
+  },
+  execute_or_recover: {
+    type: 'object', required: ['expectedRevision', 'expectedDigest', 'requestKey', 'caller', 'authorization'],
+    properties: {
+      expectedRevision: { type: 'integer', minimum: 1 }, expectedDigest: { type: 'string', description: 'Exact digest from prepare/show.' },
+      requestKey: { type: 'string', minLength: 1, maxLength: 256 },
+      caller: { type: 'object', required: ['actor', 'tool', 'client_run_id'], properties: { actor: { enum: ['agent', 'user'] }, tool: { type: 'string', minLength: 1 }, client_run_id: { type: 'string', minLength: 1 } } },
+      authorization: { type: 'object', required: ['path', 'reason'], properties: { path: { type: 'string', description: 'Exact absolute prepared Project path.' }, reason: { type: 'string', minLength: 1, description: 'User task authority for registering this directory.' } } },
+    },
+  },
+});
+
 // Current callable additions. CLI help and Host discovery consume this same data.
 export const CURRENT_COMMAND_GUIDE = Object.freeze([
+  { commands: ['project register prepare', 'project register show', 'project register execute', 'project register recover'],
+    purpose: 'Register an explicitly authorized existing Project folder without a native picker or source file changes.',
+    required: 'prepare: --request-file with absolute path, rootPolicy project_only, requestKey and caller; show: registration_id; execute/recover: registration_id and --request-file with expectedRevision, expectedDigest, requestKey, caller and exact-path authorization',
+    returns: 'registration_id, revision, digest, exact Project/Root scope, registration identity and resolved state',
+    request_schemas: PROJECT_REGISTRATION_REQUEST_SCHEMAS,
+    request_examples: {
+      prepare: { path: '<absolute-existing-Project-folder>', rootPolicy: 'project_only', requestKey: '<stable-prepare-key>', caller: { actor: 'agent', tool: '<host>', client_run_id: '<run>' } },
+      execute_or_recover: { expectedRevision: 1, expectedDigest: '<digest-from-prepare-or-show>', requestKey: '<stable-action-key>', caller: { actor: 'agent', tool: '<host>', client_run_id: '<run>' }, authorization: { path: '<exact-prepared-Project-folder>', reason: '<user-task-authority>' } },
+    },
+    on_failure: 'Read show, correct authority or stale facts; recover only the recorded pending registration. Only project_only is supported.',
+    example: 'atlas project register prepare --request-file <registration-request.json> --json' },
   { commands: ['capture source prepare-markdown'],
     purpose: 'Prepare a real Markdown candidate from bounded public HTTP content for explicit Save confirmation.',
     required: '--url, --project, --folder, --name, --request-key, --tool, --client-run-id and --json',
@@ -61,7 +94,7 @@ export const CAPABILITIES = Object.freeze({
     format: 'atlas-runtime-install.v1',
     minimum_node_major: 24,
     mode: 'user_scope_offline_copy',
-    user_skill: 'atlas-file-governance',
+    user_skill: 'keeproot',
     state_outside_governed_library: true,
   },
   json_flag: '--json',
@@ -70,11 +103,12 @@ export const CAPABILITIES = Object.freeze({
     event_entry: 'node <Runtime>/bin/atlas-host-events.js --binding <reviewed-binding.json> --json',
     supported_hook_input: 'Codex PostToolUse with session_id, turn_id and tool_use_id',
     precompact: 'skipped_without_unique_documented_event_identity',
-    session_surface: 'Project Handoff HTML UI; Codex App Server 0.162.0-alpha.2',
+    session_surface: 'Project Handoff HTML UI; reviewed Codex App Server 0.162.0-alpha.2 and 0.162.0-alpha.17.2',
     authority: 'explicit_operator_configuration_for_actual_process_access_and_account_use',
     acceptance: 'real_model_turn_and_user_hook_activation_not_verified',
   },
   workflows: {
+    project_registration: ['prepare', 'show', 'execute', 'recover'],
     handoff: ['create', 'list', 'show', 'read'],
     module: ['list', 'package-preview', 'package-list', 'install', 'preview', 'save', 'enable', 'disable'],
     project_membership: ['prepare', 'show', 'execute', 'undo', 'recover'],

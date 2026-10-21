@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -24,6 +25,54 @@ function setup(name) {
     libraryRoot: path.join(root, '资料库'),
   };
 }
+
+test('Keeproot Skill upgrade changes its entry name while preserving legacy paths and state', () => {
+  const scope = setup('runtime-keeproot-skill-entry');
+  installRuntime({ sourceRoot: projectRoot, installRoot: scope.installRoot,
+    skillRoot: scope.skillRoot, nodePath: process.execPath });
+  const previousSkill = fs.readFileSync(path.join(scope.skillRoot, 'SKILL.md'));
+  const stateFile = path.join(scope.installRoot, 'state', 'kept.txt');
+  fs.writeFileSync(stateFile, 'preserve existing state');
+  const canonical = path.join(scope.root, '用户 Skills', 'keeproot');
+  installRuntime({ sourceRoot: projectRoot, installRoot: scope.installRoot,
+    skillRoot: canonical, nodePath: process.execPath, operation: 'upgrade' });
+  const located = locateInstalledRuntime(scope.installRoot);
+  assert.equal(located.status, 'ready');
+  assert.equal(located.integrity, 'verified');
+  assert.equal(located.manifest.skill_path, canonical);
+  const entry = fs.readFileSync(path.join(canonical, 'SKILL.md'), 'utf8');
+  assert.match(entry, /^---\r?\nname: keeproot\r?\n/u);
+  const description = entry.match(/^description: (.+)$/mu)?.[1];
+  assert.match(description.slice(0, 120), /Keeproot.*(?:CLI|Runtime)/u);
+  assert.match(entry, /not a.*tool named [`']?keeproot/iu);
+  assert.match(fs.readFileSync(path.join(canonical, 'agents', 'openai.yaml'), 'utf8'), /\$keeproot/u);
+  assert.deepEqual(fs.readFileSync(path.join(scope.skillRoot, 'SKILL.md')), previousSkill);
+  assert.equal(fs.readFileSync(stateFile, 'utf8'), 'preserve existing state');
+  assert.throws(() => installRuntime({ sourceRoot: projectRoot, installRoot: scope.installRoot,
+    skillRoot: canonical, nodePath: process.execPath, operation: 'upgrade', faultAt: 'after_skill_swap' }),
+  /Injected runtime upgrade failure/u);
+  assert.equal(locateInstalledRuntime(scope.installRoot).integrity, 'verified');
+  assert.equal(fs.readFileSync(stateFile, 'utf8'), 'preserve existing state');
+});
+
+test('Skill name migration keeps default uninstall bound to its recorded installation', () => {
+  const scope = setup('runtime-keeproot-uninstall-binding');
+  installRuntime({ sourceRoot: projectRoot, installRoot: scope.installRoot,
+    skillRoot: scope.skillRoot, nodePath: process.execPath });
+  const codexHome = path.join(scope.root, 'isolated-codex-home');
+  const otherSkill = path.join(codexHome, 'skills', 'keeproot');
+  fs.mkdirSync(otherSkill, { recursive: true });
+  fs.writeFileSync(path.join(otherSkill, 'SKILL.md'), 'another installation owns this');
+  const result = spawnSync(process.execPath, [path.join(projectRoot, 'scripts/runtime-manager.js'),
+    'uninstall', '--install-root', scope.installRoot, '--no-start-menu-shortcut'], {
+    cwd: projectRoot, encoding: 'utf8', windowsHide: true, timeout: 10000,
+    env: { ...process.env, CODEX_HOME: codexHome },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(fs.existsSync(scope.skillRoot), false);
+  assert.equal(fs.readFileSync(path.join(otherSkill, 'SKILL.md'), 'utf8'), 'another installation owns this');
+  assert.equal(fs.existsSync(path.join(scope.installRoot, 'state')), true);
+});
 
 test('Runtime installer is offline, user-scoped, idempotent, and keeps state outside the Library', () => {
   const scope = setup('runtime-install-chinese');
@@ -51,6 +100,8 @@ test('Runtime installer is offline, user-scoped, idempotent, and keeps state out
   assert.ok(fs.existsSync(path.join(scope.installRoot, 'atlas-ui.cmd')));
   assert.ok(fs.existsSync(path.join(scope.installRoot, 'atlas-ui.ps1')));
   assert.ok(fs.existsSync(path.join(scope.installRoot, 'runtime', 'bin', 'atlas.js')));
+  assert.equal(fs.readFileSync(path.join(scope.installRoot, 'runtime', 'LICENSE'), 'utf8'),
+    fs.readFileSync(path.join(projectRoot, 'LICENSE'), 'utf8'));
   assert.ok(fs.existsSync(path.join(scope.installRoot, 'runtime', 'assets', 'atlas.ico')));
   assert.ok(fs.existsSync(path.join(scope.skillRoot, 'SKILL.md')));
   const located = locateInstalledRuntime(scope.installRoot);

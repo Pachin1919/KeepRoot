@@ -167,7 +167,7 @@ test('current-product demo creates one verified three-row Result and a readable 
     if(href===demo.rule_preview_href)assert.match(await page.text(),/01_资料/u);
     if(href===demo.location_href)assert.match(await page.text(),/地区活动简报/u);
     if(href===demo.pivot_href){const html=await page.text();assert.match(html,/data-work-pivot/u);assert.match(html,/<tr><td>北区<\/td><td>100<\/td><td>50<\/td><td>150<\/td><td>60%<\/td><td>1<\/td><\/tr>/u);assert.match(html,/<tr><td>南区<\/td><td>70<\/td><td>30<\/td><td>100<\/td><td>40%<\/td><td>2<\/td><\/tr>/u);}
-    if(href===demo.trend_href){const html=await page.text();assert.match(html,/data-work-trend-chart/u);assert.match(html,/2026-01/u);assert.match(html,/2026-02/u);assert.match(html,/50%/u);}
+    if(href===demo.trend_href){const html=await page.text();assert.match(html,/data-work-trend/u);assert.match(html,/data-result-table/u);assert.match(html,/2026-01/u);assert.match(html,/2026-02/u);assert.match(html,/50%/u);}
   }
   await session.close();session=null;
   assert.ok(fs.existsSync(demo.result_path),'closing the UI retains results');

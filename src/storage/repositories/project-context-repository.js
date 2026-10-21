@@ -69,13 +69,14 @@ export class ProjectContextRepository {
     rootType,
     contentPolicy,
     adoptedAt,
+    rootId: plannedRootId = null,
   }) {
     return this.transaction(() => {
       let row = this.db.prepare(`
         SELECT * FROM portfolio_roots WHERE current_path = ? COLLATE NOCASE
       `).get(currentPath);
       if (!row) {
-        const rootId = `ROOT-${crypto.randomUUID()}`;
+        const rootId = plannedRootId ?? `ROOT-${crypto.randomUUID()}`;
         this.db.prepare(`
           INSERT INTO portfolio_roots(
             id, current_path, status, created_at, updated_at,
@@ -171,7 +172,7 @@ export class ProjectContextRepository {
     `).all(projectId).map(publicIdentity);
   }
 
-  recordIdentity({ projectId, signature, reason, recordedAt }) {
+  recordIdentity({ projectId, signature, reason, recordedAt, identityId: plannedIdentityId = null }) {
     return this.transaction(() => {
       const active = this.db.prepare(`
         SELECT * FROM project_identity_signatures
@@ -185,7 +186,7 @@ export class ProjectContextRepository {
           WHERE id = ?
         `).run(recordedAt, active.id);
       }
-      const identityId = `PID-${crypto.randomUUID()}`;
+      const identityId = plannedIdentityId ?? `PID-${crypto.randomUUID()}`;
       this.db.prepare(`
         INSERT INTO project_identity_signatures(
           id, project_id, signature_hash, evidence_json, stable_signals_json,
@@ -291,6 +292,7 @@ export class ProjectContextRepository {
     relativePath,
     reason,
     attachedAt,
+    locationId: plannedLocationId = null,
   }) {
     return this.transaction(() => {
       const project = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
@@ -319,7 +321,7 @@ export class ProjectContextRepository {
           WHERE id = ?
         `).run(attachedAt, reason, active.id);
       }
-      const locationId = `LOC-${crypto.randomUUID()}`;
+      const locationId = plannedLocationId ?? `LOC-${crypto.randomUUID()}`;
       this.db.prepare(`
         INSERT INTO project_locations(
           id, project_id, root_id, relative_path, status, valid_from, reason

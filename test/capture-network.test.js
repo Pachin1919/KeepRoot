@@ -12,12 +12,20 @@ test('Public capture uses the configured Node proxy and still rejects a redirect
   let redirect = false;
   const body = '<html><title>Proxy fixture</title><p>Captured by Keeproot.</p></html>';
   const server = http.createServer();
+  // Built-in HTTP proxy agents use an absolute-form GET; fetch used CONNECT.
+  // Exercise both transports while retaining the private-redirect rejection.
+  server.on('request', (request, response) => {
+    hits += 1;
+    response.writeHead(redirect ? 302 : 200, redirect ? {location:'http://127.0.0.1/private'}
+      : {'content-type':'text/html','x-large-public-header':'h'.repeat(24*1024)});
+    response.end(redirect ? '' : body);
+  });
   server.on('connect', (request, socket) => {
     hits += 1; sockets.add(socket); socket.on('close', () => sockets.delete(socket));
     socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
     socket.once('data', () => socket.end(redirect
       ? 'HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1/private\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
-      : 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: '+Buffer.byteLength(body)+'\r\nConnection: close\r\n\r\n'+body));
+      : 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nX-Large-Public-Header: '+ 'h'.repeat(24*1024) +'\r\nContent-Length: '+Buffer.byteLength(body)+'\r\nConnection: close\r\n\r\n'+body));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   let restore;

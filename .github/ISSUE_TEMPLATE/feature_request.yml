@@ -1,0 +1,22 @@
+name: Workflow improvement
+description: Describe a user or Host task that Keeproot cannot complete.
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: What task are you trying to complete?
+      description: Describe the desired result, with fictional materials if needed.
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Where does the current workflow stop?
+      description: Include version/build, CLI or UI entry, and the current workaround.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement and how to verify it
+      description: A complete result chain is more useful than a new button or architecture layer. Do not upload private material.

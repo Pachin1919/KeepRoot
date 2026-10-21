@@ -18,17 +18,19 @@ export function renderDocumentUpdateView(model, options = {}) {
   const status = t(`document_update.${update?.status ?? 'preview_ready'}`);
   const action = update?.pending ? 'recover' : update?.execution && update.status !== 'undone' ? 'undo'
     : update?.decision && update.decision.kind !== 'keep-current' && update.status === 'preview_ready' ? 'execute' : null;
-  const csrf = `<input type="hidden" name="csrf" value="${h(options.csrfToken)}">`;
+  const returnScope = (() => { try { const value=model.return_href; const parsed=new URL(value,'http://atlas.local'); return typeof value==='string' && value.startsWith('/') && !value.startsWith('//') && !/[\\\r\n]/u.test(value) && parsed.origin==='http://atlas.local' && [base+'/resources',base+'/search',base+'/files'].includes(parsed.pathname) ? parsed.pathname+parsed.search : null; } catch { return null; } })();
+  const scopeField = returnScope ? '<input type="hidden" name="return_to" value="'+h(returnScope)+'">' : '';
+  const csrf = `<input type="hidden" name="csrf" value="${h(options.csrfToken)}">${scopeField}`;
   const revision = update ? `<input type="hidden" name="expected_revision" value="${h(update.revision)}"><input type="hidden" name="expected_current_sha256" value="${h(update.current?.sha256)}">` : '';
   // One key per rendered form, retained for repeated submission of that form.
   // Refreshing creates a new request; the service still checks revision and hash.
   const requestKey = () => `<details class="document-request"><summary>${h(t('document_update.request_key'))}</summary><p class="muted">${w('request_help')}</p><label>${h(t('document_update.request_key'))}<input name="request_key" required maxlength="200" value="ui-update-${crypto.randomUUID()}"></label></details>`;
   const filePath = update?.resource?.relative_path ?? model.inspect?.relative_path;
-  const returnTo = `${base}/resources?resource_id=${encodeURIComponent(resourceId)}`;
+  const returnTo = returnScope ?? base+'/resources';
   const readHref = `${base}/resources/read?${new URLSearchParams({ resource_id: resourceId, return_to: returnTo })}`;
   const step = update?.execution || update?.pending || action === 'execute' ? 2 : update ? 1 : 0;
   const steps = `<ol class="document-review-steps" aria-label="${h(t('document_update.title'))}">${['prepare', 'decide', 'apply'].map((key, index) => `<li${index === step ? ' aria-current="step"' : ''}><span>${index + 1}</span>${w(key)}</li>`).join('')}</ol>`;
-  const header = `<div class="page-intro"><div><span class="eyebrow">${h(t('document_update.eyebrow'))}</span><h1>${h(filePath || t('document_update.title'))}</h1><p class="lede">${h(update ? status : t('document_update.intro'))}</p></div><div class="inline-actions"><a class="action-button action-button-secondary" href="${h(readHref)}">${w('read')}</a><a class="text-link" href="${h(`${base}/resources?resource_id=${encodeURIComponent(resourceId)}`)}">${h(t('document_update.back_resource'))}</a></div></div>${steps}`;
+  const header = `<div class="page-intro"><div><span class="eyebrow">${h(t('document_update.eyebrow'))}</span><h1>${h(filePath || t('document_update.title'))}</h1><p class="lede">${h(update ? status : t('document_update.intro'))}</p></div><div class="inline-actions"><a class="action-button action-button-secondary" href="${h(readHref)}">${w('read')}</a><a class="text-link" href="${h(readHref)}">${h(t('document_update.back_resource'))}</a></div></div>${steps}`;
   const notice = model.notice ? `<p class="callout warn" role="alert">${h(model.notice)}</p>` : '';
   const conflict = update?.conflict ? `<p class="callout warn" role="alert">${h(t('document_update.conflict'))} ${h(update.conflict.reason)}</p>` : '';
   const references = update?.references ?? model.inspect?.references;

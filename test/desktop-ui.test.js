@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -15,6 +16,66 @@ import {
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cliPath = path.join(projectRoot, 'bin', 'atlas.js');
 const tempRoot = path.join(projectRoot, 'test', '.tmp', 'desktop-ui');
+
+test('Native Desktop window displays Keeproot and keeps the Atlas readiness and mutex protocol', () => {
+  const source = fs.readFileSync(path.join(projectRoot, 'python', 'src', 'atlas_desktop', '__main__.py'), 'utf8');
+  assert.match(source, /webview\.create_window\(\s*"Keeproot"/u);
+  assert.match(source, /Local\\\\AtlasDesktopUI-v1/u);
+  assert.match(source, /ATLAS_DESKTOP_UI_READY/u);
+});
+
+test('Desktop startup reuses the checked Python capability and still waits for native readiness', async () => {
+  const installationRoot = clean('startup-checked-capability');
+  const capability = { status: 'ready', python_path: path.join(installationRoot, 'checked-python.exe'), python_version: '3.14.4' };
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.pid = 1234;
+  child.kill = () => { child.killed = true; child.emit('exit', 0, null); };
+  let spawns = 0;
+  const desktop = await startDesktopUi({
+    url: 'http://127.0.0.1:4318/', installationRoot, runtimeRoot: projectRoot,
+    validatedCapability: capability,
+    spawnProcess(executable, args) {
+      spawns += 1;
+      assert.equal(executable, capability.python_path);
+      assert.deepEqual(args.slice(0, 2), ['-m', 'atlas_desktop']);
+      queueMicrotask(() => child.stdout.emit('data', 'ATLAS_DESKTOP_UI_READY\n'));
+      return child;
+    },
+  });
+  assert.equal(spawns, 1);
+  assert.equal(desktop.status, 'ready');
+  desktop.close();
+  assert.deepEqual(await desktop.closed, { code: 0, signal: null });
+  await assert.rejects(startDesktopUi({
+    url: 'http://127.0.0.1:4318/', installationRoot, runtimeRoot: projectRoot,
+    validatedCapability: { status: 'unavailable', message: 'dependency check failed' },
+    spawnProcess() { assert.fail('An unavailable capability must not launch'); },
+  }), (error) => error.code === 'ATLAS_DESKTOP_UI_UNAVAILABLE');
+});
+
+test('UI startup refuses a failed quick integrity check before starting its server', () => {
+  const stateDir = path.join(clean('startup-integrity-rejection'), 'state');
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { Ledger } from './src/ledger.js';
+    Ledger.prototype.diagnostics = function(options) {
+      assert.equal(options.integrityCheck, 'quick');
+      return { integrity: 'failed', integrity_check: 'quick' };
+    };
+    process.argv = [process.execPath, ${JSON.stringify(cliPath)}, 'ui', '--no-open', '--json'];
+    await import('./bin/atlas.js');
+  `], {
+    cwd: projectRoot,
+    env: { ...process.env, ATLAS_HOME: projectRoot, ATLAS_STATE_DIR: stateDir, ATLAS_DESKTOP_PYTHON: '' },
+    encoding: 'utf8', windowsHide: true, timeout: 15_000,
+  });
+  assert.equal(result.status, 1, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, 'ATLAS_LEDGER_INTEGRITY_FAILED');
+});
 
 function clean(name) {
   const root = path.join(tempRoot, name);
@@ -167,6 +228,8 @@ test('Desktop client checks the requested picker method independently', async ()
   let processingStatus = null;
   class FakeForm {
     constructor() { this.dataset = {}; this.attributes = {}; }
+    closest() { return null; }
+    matches() { return false; }
     setAttribute(name, value) { this.attributes[name] = value; }
   }
   const context = {

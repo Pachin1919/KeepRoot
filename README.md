@@ -1,78 +1,75 @@
 # Keeproot
 
-**A local workspace for materials, repeatable work and AI collaboration.**
+**A local file-work layer for people and AI hosts.**
 
-Keeproot keeps files in their existing project folders. People and AI hosts use the same resource identities, work revisions, saved results and recovery state. The host understands content and proposes changes; Keeproot checks local facts and executes supported operations.
+Keep files in their existing project folders. Keeproot gives a host and a user the same material identities, work revisions, saved results and recovery state. The host interprets content and proposes actions; Keeproot measures local facts and executes supported operations.
 
-Current version: **2.0.0-preview.1**. This is preview source, not a stable release. Atlas remains the technical name used by the CLI, protocol, Skill and installation directories.
+**2.0.0-preview.1 · Windows preview · [MIT](LICENSE)**
 
-The October 12 UI checkpoint adds fixed reader monitors, brighter controls, optional short transitions and read-only Git history. Its source baseline ran once: 1,031 tests passed, 44 failed, and one was skipped. Three stale UI assertions were corrected and passed a focused check; the earlier 41 failures remain. UI integration, navigation return context and Skill checks still need reconciliation. This checkpoint is not an installation release.
+## The core works without the UI
 
-## What you can try
-
-- Browse and read Markdown, text, images, PDF, DOCX and CSV/XLSX in the workspace.
-- Open Toolbox in the left navigation, select CSV/XLSX materials, and enter a Python table recipe: align, combine, filter, convert types, deduplicate and sort; preview and save the full result.
-- In Toolbox → Content conversion, turn a supported static public URL into a real `.md` file: choose an existing folder, preview, explicitly Save, then read. Source JSON and conversation export capture remain separate options.
-- Edit Markdown or text alongside reading: preview changes, explicitly save to the same Resource, or Undo the edit. Editing does not launch an AI session.
-- Use the fixed document-and-monitors layout, or switch to four panels while retaining the same editor and relationship canvas. Optional motion follows both system and app reduced-motion preferences.
-- In Stages and recovery, inspect a local project's supported Git history, changed files and side-by-side diff. This view is read-only and does not provide Git rollback.
-- Calculate grouped sums, two-axis pivot totals/shares/ranks, and monthly totals with period growth. [Processing implementation and limits](<docs/Atlas 技术作品与企业评审说明.md#python-processing>).
-- Reuse a work configuration with explicitly selected new sources; review source changes.
-- Read confirmed rules as condition → destination diagrams; expand the full explanation and evidence when needed. Pending summaries open their complete proposal before showing rule conditions.
-- Follow recorded source/result relationships, compose a Board and export supported content.
-- Capture supported public pages or selected conversation exports; review local updates.
-- Prepare bounded handoff context and restore supported, explicitly protected work scopes.
-
-## First trial: no personal documents or AI account needed
-
-Use Windows, **Node.js 24+** and a trusted **Python 3.11+** installation. Download this repository or clone it, open PowerShell in that folder, and run:
-
-```powershell
-.\start-preview.ps1 -InstallRoot (Join-Path $PWD 'preview-install') -Install -PythonPath 'C:\Path\To\python.exe'
+```text
+User authorizes a task and directory
+  → Host discovers capabilities and resolves the Project
+  → Keeproot returns bounded file facts and current versions
+  → Host proposes content or a supported processing recipe
+  → Keeproot prepares a version-bound operation
+  → Authorized execution → byte verification → shared result identity
+  → Reopen the same result; use recorded recovery when supported
 ```
 
-Replace the Python example with your own interpreter path. Use an unused installation directory outside your real projects. First installation downloads the required Python packages and creates an isolated environment. It does not install a user AI Hook or connect an AI account.
+| Mechanism | What the code does |
+|---|---|
+| Identity and boundaries | Register an explicitly authorized directory; resolve Project/Resource identities and refuse linked, ambiguous or out-of-root paths. |
+| Read before reasoning | Return file type, size, current version and supported parser output. Read large UTF-8 text in bounded pages instead of loading the whole body. |
+| Deterministic processing | Python applies an explicit table recipe: alignment, combination, filtering, type conversion, deduplication, grouping or pivoting. The host chooses the recipe; Keeproot does not infer its meaning. |
+| Version-bound writes | Prepare records the intended target and input facts. Execution rechecks them, refuses conflicts and verifies the saved bytes. Stable request keys support replay without silently duplicating results. |
+| Recovery and lineage | Record supported Source → Work → Result links. Protect a declared scope, preview restoration and refuse incompatible later changes. Unrecorded external edits and host conversations are not automatically captured. |
 
-The script prints a local page address. Open it and follow the [five-step trial guide](<docs/Atlas V1 验收指南.md>). The prepared sample contains two fictional CSV inputs. Saving a new result preserves those inputs and earlier results. Reopen the same sample with:
+The Desktop UI is another consumer of these services, not the source of the workflow. Node.js owns local state, boundaries and I/O; Python handles content processing. This is an engineering method for repeatable local work, not a new language model or a claim of measured token savings.
 
-```powershell
-.\start-preview.ps1 -InstallRoot (Join-Path $PWD 'preview-install')
-```
+[Implementation and algorithm walkthrough](<docs/Atlas 技术作品与企业评审说明.md#机器侧工作原理不依赖ui>) · [Host entry Skill](.agents/skills/keeproot/SKILL.md)
 
-Ctrl+C stops this page server and preserves the sample. This entry opens an HTML work surface; it does not automatically launch the native window.
+## Start from the machine interface
 
-## Limits and privacy
-
-Windows installation and representative HTML workflows have been exercised. Native display scaling, different-product AI continuation, first use on other computers and real-project acceptance still need validation. Two optional Host experiments are included but disabled by default; their real account/Hook flows are unverified. There is no cloud synchronization or general AI engine.
-
-State and snapshots stay local. Explicit URL capture contacts the selected site; package installation uses the configured package source. External AI hosts have their own data handling. Trusted local Modules run with the process account's permissions and are not a sandbox. See [usage, networking and component notices](<docs/Atlas V1 使用说明书.md>).
-
-## Development and history
-
-Node.js uses ESM, built-in SQLite and `node:test`; Python handles local document and table processing. No npm runtime installation is needed for the Node code. For tests, select the Python environment containing the pinned content dependencies:
+Requires Node.js **24+**. The CLI keeps the technical name `atlas`; an MCP tool named `keeproot` is not required.
 
 ```powershell
-$env:ATLAS_CONTENT_PYTHON = 'C:\Path\To\python.exe'
-$env:ATLAS_TEST_PYTHON = $env:ATLAS_CONTENT_PYTHON
-npm test
+node bin/atlas.js capabilities --json
+node bin/atlas.js --help
 ```
 
-The retained Git history starts on **2026-07-20**. Internal development documents and machine-specific records were removed from every published revision. Original commit dates and branch relationships are retained; hashes changed during this cleanup. Obsolete preview tags were removed. Older branches represent earlier implementations, not the current supported preview.
+For an installed Runtime, use its `atlas.cmd` launcher. Inspect `capabilities.current_product.command_guide` for the current command/request contract. The [Project reference](.agents/skills/keeproot/references/current-project.md) covers first registration; the [Save reference](.agents/skills/keeproot/references/current-save.md) covers Prepare → Execute → Verify and Undo/Redo. Consume returned IDs and revisions rather than copying example IDs. Check both `ok` and the returned business status; stop on stale, conflict, deny or unsupported results.
+
+These commands do not connect an AI account, automatically authorize a directory, or enable a Hook. Native Desktop and installed Skills are optional entry surfaces; see the [usage guide](<docs/Atlas V1 使用说明书.md>) for installation prerequisites and limits.
+
+## What is available
+
+- Project registration, in-place resource browsing, file facts and stored relationships.
+- Bounded Markdown, JSON, source/config text, image, PDF, DOCX and table reading; supported Markdown/text editing with preview and confirmation.
+- Repeatable CSV/XLSX Work, verified saves, recorded source changes, Boards and declared-scope recovery.
+- Toolbox text capture for supported public pages and conversation exports. Media downloading is outside this capture workflow.
+- English and Simplified Chinese UI, fixed reader monitors and read-only local Git history.
+
+**Preview limits:** core regression is a selected contract suite, not complete product acceptance. Native sustained performance, real automatic Hook triggering, different-product Host continuation and first use on other computers remain unverified. Historical suite results and the bounded maintenance priorities are in [CONTRIBUTING.md](CONTRIBUTING.md#validation-status-and-maintenance-priorities). There is no current claim of an all-green full suite or a stable installation release.
+
+## Develop and contribute
+
+No npm runtime dependency installation is needed for the Node code.
+
+```powershell
+npm run test:core
+npm run test:install
+```
+
+Python content processing additionally requires a trusted Python **3.11+** interpreter and the pinned dependencies in `python/pyproject.toml`. [Contribution instructions](CONTRIBUTING.md) cover setup, content tests, failure handling and publication privacy checks.
+
+[Report a bug or workflow gap](https://github.com/Pachin1919/KeepRoot/issues/new/choose) · [Core regression](https://github.com/Pachin1919/KeepRoot/actions/workflows/regression.yml) · [Manual installation/content checks](https://github.com/Pachin1919/KeepRoot/actions/workflows/extended-regression.yml)
+
+## License and privacy
 
 Keeproot's original source code and accompanying documentation are licensed under the [MIT License](LICENSE), copyright (c) 2026 Pachin1919. Bundled third-party code and dependencies retain their own licenses and notices. Original artwork, logos and other non-code creative assets are not included in the MIT grant unless expressly stated. Keeproot name rights have not been cleared.
 
-### Publishing changes
+Project files, state and recovery snapshots stay local. Explicit URL capture contacts the selected website; Python installation uses its configured package source. Hosts have their own data handling. Trusted local Modules run with the process account's permissions and are not a sandbox. Keep private documents, credentials, chat archives and state databases out of issues and pull requests.
 
-Known test limitations: the October 12 baseline has 41 failed checks across UI structure, return context and Skill contracts. Earlier isolated workflow evidence does not replace this regression gate. Native, second-host and real-project validation remain pending.
-
-Use a sanitized checkout for public updates. Do not merge private development history into this repository. Before committing, run `python scripts/check-public-source.py --worktree`; before pushing, run it without that flag. Enable the included local check with `git config --local core.hooksPath .githooks`. The hook uses Python from PATH or `ATLAS_PUBLIC_CHECK_PYTHON`. CI also checks all reachable history. The checks help detect excluded paths and common sensitive patterns; review public content before upload.
-
-## UI implementation references
-
-The visual refinement branch borrows layout mechanisms from [Superset's fixed dashboard grid](https://github.com/apache/superset/blob/42bbfa49079eff910ead01b7880b94d09c5ca520/superset-frontend/src/dashboard/components/DashboardBuilder/DashboardBuilder.tsx), [Evidence's surface and density tokens](https://github.com/evidence-dev/evidence/blob/14e6caed59ffbb01ea4aa1a0f66a7e29d0e964d1/core/src/theme/theme-css-helper.ts), and [Rill's compact controls](https://github.com/rilldata/rill/blob/aa3660068b8a10e59495e35790b6de0bdcdba4e7/web-common/src/components/button/Button.svelte). These are design references; their frameworks, dependencies and code were not copied into this refinement.
-
-## Feedback
-
-Use [GitHub Issues](https://github.com/Pachin1919/keeproot/issues). Include version/build, Windows display scale, steps, expected behavior and a redacted screenshot. Do not upload private files, credentials, chat archives or whole state databases.
-
-[Product overview](<docs/Atlas V1 产品说明书.md>) · [Usage](<docs/Atlas V1 使用说明书.md>) · [Architecture and evidence limits](<docs/Atlas 技术作品与企业评审说明.md>)
+The public Git history starts on **2026-07-20**. Private development records were removed from published history; original commit dates and branch relationships were retained. See [architecture and evidence limits](<docs/Atlas 技术作品与企业评审说明.md>) and the [product overview](<docs/Atlas V1 产品说明书.md>).

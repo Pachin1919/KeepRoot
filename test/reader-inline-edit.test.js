@@ -139,7 +139,7 @@ test('a Reader response arriving after new input preserves the newer draft and i
   const surface={dataset:{readerResourceId:'R',readerEditError:'Draft kept'},querySelector:selector=>selector==='#reader-content'?content:selector==='[data-reader-edit-status]'?status:null,addEventListener:(kind,fn)=>{handlers[kind]=fn;}};
   const replacement={querySelector:()=>true,childNodes:[]};
   const context={surface,URL,AbortSignal,dirtyDraftForms:new Set(),window:{location:{pathname:'/projects/P/resources/read',href:'http://localhost/projects/P/resources/read?resource_id=R',origin:'http://localhost'},AtlasReaderEditor:{destroy(){destroyed++;}}},
-    DOMParser:class{parseFromString(){return {querySelector:()=>({dataset:{readerResourceId:'R'},querySelector:()=>replacement})};}},fetch:()=>new Promise(resolve=>{resolveResponse=resolve;})};
+    DOMParser:class{parseFromString(){return {querySelector:selector=>selector==='[data-resource-reader]'?{dataset:{readerResourceId:'R'},querySelector:selector=>selector==='#reader-content'?replacement:null}:null};}},fetch:()=>new Promise(resolve=>{resolveResponse=resolve;})};
   vm.runInNewContext(code.slice(start,end)+'\nbindReaderInlineEditor(surface);',context);
   const pending=handlers.click({button:0,preventDefault(){},target:{closest:()=>({href:'/projects/P/resources/edit?resource_id=R',matches:()=>true})}});
   handlers.input({target:{matches:()=>true}});

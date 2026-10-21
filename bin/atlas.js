@@ -33,6 +33,7 @@ import { Portfolio } from '../src/portfolio.js';
 import { PreferenceRules } from '../src/preference-rules.js';
 import { Registry } from '../src/registry.js';
 import { createProjectMoveService } from '../src/project-move-service.js';
+import { createProjectRegistrationService } from '../src/project-registration-service.js';
 import { createProjectMembershipService } from '../src/project-membership-service.js';
 import { evaluateRisk } from '../src/risk.js';
 import { isPathInside, normalizeStateDir } from '../src/paths.js';
@@ -1039,6 +1040,27 @@ function handleCatalog(catalog, args) {
 
 function handleProject(registry, args) {
   const [action, ...rest] = args;
+  if (action === 'register') {
+    const [registrationAction, ...argumentsList] = rest;
+    if (!['prepare', 'show', 'execute', 'recover'].includes(registrationAction)) throw new Error('Use project register prepare|show|execute|recover.');
+    let requestFile = null; let registrationId = null;
+    for (let index = 0; index < argumentsList.length; index++) {
+      if (argumentsList[index] === '--request-file') requestFile = argumentsList[++index];
+      else if (!registrationId && !argumentsList[index].startsWith('--')) registrationId = argumentsList[index];
+      else throw new Error(`Unknown project register argument: ${argumentsList[index]}`);
+    }
+    if (registrationAction !== 'show' && !requestFile || registrationAction !== 'prepare' && !registrationId
+        || registrationAction === 'prepare' && registrationId || registrationAction === 'show' && requestFile) {
+      throw new Error('Registration prepare requires --request-file; show requires registration_id; execute/recover require registration_id and --request-file.');
+    }
+    const request = requestFile ? JSON.parse(fs.readFileSync(requestFile, 'utf8')) : null;
+    const service = createProjectRegistrationService({ stateDir: registry.stateDir, registry });
+    try {
+      const result = registrationAction === 'prepare' ? service.prepare(request) : service[registrationAction](registrationId, request);
+      emit(`project.register.${registrationAction}`, result, () => console.log(JSON.stringify(result, null, 2)));
+    } finally { service.dispose(); }
+    return;
+  }
   if (action === 'membership') {
     const [membershipAction, ...argumentsList] = rest;
     if (!['prepare', 'show', 'execute', 'undo', 'recover'].includes(membershipAction)) throw new Error('Use project membership prepare|show|execute|undo|recover --request-file <json>.');
@@ -3071,8 +3093,9 @@ function compactContentInspection(result) {
   };
 }
 
-function optionalPythonCapability() {
-  const detail = doctorDesktopUiComponent({ installationRoot, runtimeRoot: projectRoot });
+function optionalPythonCapability({ startup = false } = {}) {
+  const detail = doctorDesktopUiComponent({ installationRoot, runtimeRoot: projectRoot,
+    ...(startup ? { probeMode: 'startup' } : {}) });
   return {
     available: detail.status === 'ready',
     ...detail,
@@ -3581,7 +3604,13 @@ async function main() {
         if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535) {
           throw new Error('ui accepts an optional --path, --port, --no-open, or --browser.');
         }
-        const diagnostics = tracker.ledger.diagnostics();
+        const diagnostics = tracker.ledger.diagnostics({ integrityCheck: 'quick' });
+        if (diagnostics.integrity !== 'ok') {
+          const error = new Error('Atlas Ledger startup quick check failed. Run atlas doctor for full diagnostics.');
+          error.code = 'ATLAS_LEDGER_INTEGRITY_FAILED';
+          throw error;
+        }
+        const pythonCapability = optionalPythonCapability({ startup: true });
         const { startAtlasUiServer } = await import('../src/ui-server.js');
         const session = await startAtlasUiServer({
           stateDir,
@@ -3596,10 +3625,11 @@ async function main() {
             installation_root: installationRoot,
             ledger: {
               integrity: diagnostics.integrity,
+              integrity_check: diagnostics.integrity_check,
               schema_version: diagnostics.schema_version,
               supported_schema_version: diagnostics.supported_schema_version,
             },
-            python: optionalPythonCapability(),
+            python: pythonCapability,
           },
           intake,
           projectRoot,
@@ -3615,6 +3645,7 @@ async function main() {
               url: session.url,
               installationRoot,
               runtimeRoot: projectRoot,
+              validatedCapability: pythonCapability,
               pickerRegistrationUrl: session.desktop_picker?.registration_url,
               pickerToken: session.desktop_picker?.token,
             });

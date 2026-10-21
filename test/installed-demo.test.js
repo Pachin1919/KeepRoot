@@ -22,7 +22,7 @@ function installedFixture() {
   return fixture;
 }
 
-test('installed sample uses the actual installed CLI, retains isolated identities and reopens through its UI', async (t) => {
+test('installed sample uses the actual installed CLI, retains isolated identities and reopens through its UI', {timeout:120_000}, async (t) => {
   const { python, installRoot, receipt, demo } = installedFixture();
   let session;
   t.after(async () => { if (session) await session.close(); });

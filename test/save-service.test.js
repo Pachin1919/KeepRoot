@@ -45,6 +45,41 @@ test('Save Service commits one shared result shape and preserves request replay'
   assert.throws(() => save.prepare({ ...options, target: 'Projects/One/other.md' }), { code: 'ATLAS_STATE_CONFLICT' });
 });
 
+test('Save journal retries transient Windows replacement contention without duplicating the request', (t) => {
+  const caseRoot = temporary(t, 'save-journal-contention-'); const stateDir = path.join(caseRoot, 'state');
+  const candidate = path.join(caseRoot, 'candidate.md'); fs.writeFileSync(candidate, 'candidate\n');
+  let prepareCalls = 0; let contention = 0; const rename = fs.renameSync;
+  const intake = { prepare(options) { prepareCalls += 1; return { status: 'prepared', run_id: options.runId, target: 'Projects/One/result.md', project: { id: 'PRJ-1', name: 'One', path: 'Projects/One' } }; }, dispose() {} };
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (to === path.join(stateDir, 'ui', 'saved-work.json') && contention++ < 2) throw Object.assign(new Error('sharing violation'), { code: 'EPERM' });
+    return rename(from, to);
+  });
+  const save = createSaveService({ stateDir, intake }); t.after(() => save.dispose());
+  const options = { root: caseRoot, candidateFile: candidate, projectId: 'PRJ-1', target: 'Projects/One/result.md', origin: 'agent_generated', kind: 'intermediate', caller: { tool: 'test', client_run_id: 'journal-contention' }, requestKey: 'one-request' };
+  if (process.platform !== 'win32') { assert.throws(() => save.prepare(options), { code: 'EPERM' }); return; }
+  const prepared = save.prepare(options); assert.equal(prepared.status, 'prepared');
+  assert.equal(save.prepare(options).save_id, prepared.save_id); assert.equal(prepareCalls, 1);
+  const rows = JSON.parse(fs.readFileSync(path.join(stateDir, 'ui', 'saved-work.json'), 'utf8')).items;
+  assert.equal(rows.length, 1); assert.equal(rows[0].save_id, prepared.save_id);
+  assert.equal(fs.readFileSync(candidate, 'utf8'), 'candidate\n');
+  assert.deepEqual(fs.readdirSync(path.join(stateDir, 'ui')), ['saved-work.json']);
+});
+
+test('Save journal keeps the prior record when replacement contention persists', (t) => {
+  const caseRoot = temporary(t, 'save-journal-busy-'); const stateDir = path.join(caseRoot, 'state');
+  const candidate = path.join(caseRoot, 'candidate.md'); fs.writeFileSync(candidate, 'candidate\n');
+  let prepareCalls = 0; let attempts = 0; const rename = fs.renameSync;
+  const intake = { prepare(options) { prepareCalls += 1; return { status: 'prepared', run_id: options.runId, target: 'Projects/One/result.md', project: { id: 'PRJ-1', name: 'One', path: 'Projects/One' } }; }, dispose() {} };
+  const save = createSaveService({ stateDir, intake }); t.after(() => save.dispose());
+  const options = { root: caseRoot, candidateFile: candidate, projectId: 'PRJ-1', target: 'Projects/One/result.md', origin: 'agent_generated', kind: 'intermediate', caller: { tool: 'test', client_run_id: 'journal-busy' }, requestKey: 'existing' };
+  save.prepare(options); const journal = path.join(stateDir, 'ui', 'saved-work.json'); const before = fs.readFileSync(journal);
+  t.mock.method(fs, 'renameSync', (from, to) => { if (to === journal) { attempts += 1; throw Object.assign(new Error('still locked'), { code: 'EPERM' }); } return rename(from, to); });
+  assert.throws(() => save.prepare({ ...options, requestKey: 'blocked' }), { code: 'EPERM' });
+  assert.ok(attempts <= 4); assert.equal(prepareCalls, 1); assert.deepEqual(fs.readFileSync(journal), before);
+  assert.equal(fs.readFileSync(candidate, 'utf8'), 'candidate\n');
+  assert.deepEqual(fs.readdirSync(path.join(stateDir, 'ui')), ['saved-work.json']);
+});
+
 test('V20 Save plan binds prepare and execute to current plan and preview revisions', (t) => {
   const caseRoot = temporary(t, 'save-v20-revisions-');
   const vault = path.join(caseRoot, 'vault'); const stateDir = path.join(caseRoot, 'state');
@@ -241,6 +276,7 @@ test('Save Service rejects unverified or mismatched Project paths', (t) => {
   assert.throws(() => withProject({ id: 'PRJ-1', name: 'One' }).prepare(options), { code: 'ATLAS_STATE_CONFLICT' });
   assert.equal(JSON.parse(fs.readFileSync(path.join(stateDir, 'ui', 'saved-work.json'), 'utf8')).items[0].status, 'failed');
   assert.throws(() => withProject({ id: 'PRJ-1', name: 'One', path: 'Projects/Other' }).prepare({ ...options, requestKey: 'project-mismatch' }), { code: 'ATLAS_STATE_CONFLICT' });
+  assert.throws(() => withProject({ id: 'PRJ-1', name: 'One', path: '.' }).prepare({ ...options, requestKey: 'unregistered-root-level' }), { code: 'ATLAS_STATE_CONFLICT' });
   assert.equal(JSON.parse(fs.readFileSync(path.join(stateDir, 'ui', 'saved-work.json'), 'utf8')).items[0].owner_pid, null);
 });
 

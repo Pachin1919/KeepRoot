@@ -1,17 +1,10 @@
 import path from 'node:path';
-import { savedResultFreshness, savedResultState, sourceVersionPolicy } from './saved-work-service.js';
+import { savedResultFreshness } from './saved-work-service.js';
 
 function sourceChangeState(resource, source) {
   if (['missing', 'changed', 'moved'].includes(source?.status)) return source.status;
   if (['missing', 'changed'].includes(resource?.external_change?.status)) return resource.external_change.status;
   return resource?.external_change?.status ?? source?.status ?? 'not_checked';
-}
-
-function resultForWork(savedWork, work) {
-  return savedWork.filter((item) => item.project?.id === work.project_id || item.project_id === work.project_id)
-    .filter((item) => item.parameters?.work_session_id === work.session_id
-      || item.work_id === work.latest_save_id
-      || item.save_id === work.latest_save_id);
 }
 
 function impactFor({ changeState, versionPolicy, work, results }) {
@@ -20,6 +13,9 @@ function impactFor({ changeState, versionPolicy, work, results }) {
     const detail = outputIssue.output_state === 'missing_source' ? 'is missing' : outputIssue.output_state === 'changed' ? 'changed after Save' : 'was undone';
     return { status: 'needs_review', label: 'Needs review', reason: `Saved Result ${outputIssue.name} ${detail}.` };
   }
+  const reviewedResult = results.find(item => item.freshness?.status === 'needs_review');
+  if (reviewedResult) return { status: 'needs_review', label: 'Needs review',
+    reason: `Saved Result ${reviewedResult.name} has followed Sources that need review.` };
   if (['changed', 'moved', 'missing'].includes(changeState)) {
     if (versionPolicy === 'pinned_version') {
       return { status: 'contained', label: 'Pinned impact', reason: `The Source is ${changeState}, but this Work is pinned to its recorded version.` };
@@ -27,24 +23,54 @@ function impactFor({ changeState, versionPolicy, work, results }) {
     return { status: 'needs_review', label: 'Needs review', reason: `The followed Source is ${changeState}; review this Work and its Results.` };
   }
   if (work.freshness?.status === 'needs_review') return { status: 'needs_review', label: 'Needs review', reason: work.freshness.reason ?? 'This Work needs review.' };
+  if (!['unchanged', 'fresh'].includes(changeState) || work.freshness?.status !== 'fresh'
+    || results.some(item => item.freshness?.status === 'not_checked')) {
+    return { status: 'not_checked', label: 'Not checked', reason: 'This chain has no current verification for all followed Sources and Results.' };
+  }
   return { status: 'fresh', label: 'Fresh', reason: 'The Source, Work, and recorded Results have no known impact requiring review.' };
 }
 
 export function buildResourceImpactLanes({ resource, workSessions = [], savedWork = [] }) {
   const resourceId = resource?.resource_id ?? resource?.resource?.id ?? null;
   if (!resourceId) return [];
-  return workSessions
-    .filter((work) => work.project_id && work.sources?.some((source) => source.resource_id === resourceId))
-    .map((work) => {
-      const source = work.sources.find((item) => item.resource_id === resourceId);
+  // Index only Works that consume the selected Resource. One Save pass replaces
+  // a full Save-list scan per Work; empty pointers never count as matching IDs.
+  const matches = [], byProject = new Map();
+  const add = (index, key, match) => {
+    if (typeof key !== 'string' || !key) return;
+    const entries = index.get(key) ?? []; entries.push(match); index.set(key, entries);
+  };
+  for (const work of workSessions) {
+    if (!work.project_id) continue;
+    const source = work.sources?.find(item => item.resource_id === resourceId);
+    if (!source) continue;
+    const match = { work, source, saves: [] }; matches.push(match);
+    let index = byProject.get(work.project_id);
+    if (!index) { index = { sessions: new Map(), latest: new Map() }; byProject.set(work.project_id, index); }
+    add(index.sessions, work.session_id, match); add(index.latest, work.latest_save_id, match);
+  }
+  if (!matches.length) return [];
+  for (const item of savedWork) {
+    const recipients = new Set();
+    for (const projectId of new Set([item.project?.id, item.project_id])) {
+      const index = byProject.get(projectId); if (!index) continue;
+      for (const group of [index.sessions.get(item.parameters?.work_session_id),
+        index.latest.get(item.work_id), index.latest.get(item.save_id)]) {
+        for (const match of group ?? []) recipients.add(match);
+      }
+    }
+    for (const match of recipients) match.saves.push(item);
+  }
+  // Verification lives only in this call. Save freshness owns its immutable
+  // inputs; checking the same Save for two Work pointers must not rehash it.
+  const checkedSaves = new Map();
+  return matches.map(({ work, source, saves }) => {
       const changeState = sourceChangeState(resource, source);
       const versionPolicy = source?.version_policy ?? 'follow_latest';
-      const results = resultForWork(savedWork, work).map((item) => {
-        const outputState = savedResultState(item);
-        const freshness = savedResultFreshness(item, {
-          sourceFreshness: work.freshness,
-          versionPolicy: sourceVersionPolicy(work.sources, item.version_policy),
-        });
+      const results = saves.map((item) => {
+        if (!checkedSaves.has(item)) checkedSaves.set(item, savedResultFreshness(item));
+        const freshness = { ...checkedSaves.get(item) };
+        const outputState = freshness.output_status;
         const saveId = item.save_id ?? item.work_id;
         return {
           save_id: saveId,
@@ -116,7 +142,7 @@ export function buildResourceFocusGraph({ projectId, resource, relationshipFocus
     if (!work?.session_id || (nodes.size >= maxNodes && !nodes.has(`work:${work.session_id}`))) { truncated = true; continue; }
     const workNodeId = `work:${work.session_id}`;
     nodes.set(workNodeId, { id: workNodeId, kind: 'work', session_id: work.session_id, label: work.session_id,
-      revision: work.revision, freshness: work.freshness, href: work.href ?? `/work/${encodeURIComponent(work.session_id)}` });
+      revision: work.revision, freshness: lane.impact ?? work.freshness, href: work.href ?? `/work/${encodeURIComponent(work.session_id)}` });
     const sourceEdgeId = `derived:source:${resourceId}:${work.session_id}`;
     if (edges.size < maxEdges) edges.set(sourceEdgeId, { id: sourceEdgeId, kind: 'derived', derived_kind: 'source_to_work',
       source: `resource:${resourceId}`, target: workNodeId, resource_id: resourceId, work_session_id: work.session_id, impact: lane.impact });

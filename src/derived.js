@@ -486,7 +486,14 @@ export class Derived {
     const normalizedTarget = normalizeNewTarget(root, target);
     const project = this.ledger.getProject(projectId);
     if (project.status !== 'active') throw new Error(`Derived Project is not active: ${projectId}`);
-    if (!isTargetInsideProject(normalizedTarget.relative, project.current_path)) {
+    const rootLevelProject = project.current_path === '' || project.current_path === '.';
+    const registeredLocation = rootLevelProject ? this.projectContext.getActiveLocation(project.id) : null;
+    const insideProject = rootLevelProject
+      ? registeredLocation != null
+        && path.resolve(registeredLocation.root_path, registeredLocation.relative_path)
+          .localeCompare(path.resolve(root), undefined, { sensitivity: 'accent' }) === 0
+      : isTargetInsideProject(normalizedTarget.relative, project.current_path);
+    if (!insideProject) {
       throw new Error(
         `Derived target must be inside Project ${projectId} at ${project.current_path}: ${normalizedTarget.relative}`,
       );
@@ -506,7 +513,8 @@ export class Derived {
         const location = this.projectContext.getActiveLocation(normalized.sourceProjectId);
         if (!location
             || location.root_id !== normalized.sourceRootId
-            || !(normalized.sourceRelativePath === location.relative_path
+          || !(location.relative_path === '' || location.relative_path === '.'
+              || normalized.sourceRelativePath === location.relative_path
               || normalized.sourceRelativePath.startsWith(`${location.relative_path}/`))) {
           throw new Error(`Trusted Derived input is outside its active source Project: ${normalized.relative}`);
         }

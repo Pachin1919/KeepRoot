@@ -84,16 +84,18 @@ function probePython(executable, options) {
 }
 
 function probeModule(executable, options) {
+  const imports = options.probeMode === 'startup'
+    ? [
+      'import importlib.util as util',
+      'assert all(util.find_spec(name) is not None for name in ("atlas_desktop", "pandas", "pypdf", "pdfplumber", "webview")), "Desktop dependency is missing"',
+    ]
+    : ['import atlas_desktop', 'import pandas', 'import pypdf', 'import pdfplumber', 'import webview'];
   const result = runPython(executable, [
     '-c',
     [
       'import importlib.metadata as metadata',
       'import json',
-      'import atlas_desktop',
-      'import pandas',
-      'import pypdf',
-      'import pdfplumber',
-      'import webview',
+      ...imports,
       'print(json.dumps({"pywebview": metadata.version("pywebview"), "pandas": metadata.version("pandas"), "pypdf": metadata.version("pypdf"), "pdfplumber": metadata.version("pdfplumber")}))',
     ].join('; '),
   ], { ...options, timeout: 20_000 });
@@ -126,12 +128,14 @@ export function doctorDesktopUiComponent({
   runtimeRoot,
   configuredPath = process.env.ATLAS_DESKTOP_PYTHON,
   runProcess = spawnSync,
+  probeMode = 'full',
 } = {}) {
+  if (!['full', 'startup'].includes(probeMode)) throw new Error('Unsupported Desktop dependency probe mode.');
   const locations = componentPaths(installationRoot);
   const inspect = (pythonPath, mode, installed, componentVersion = DESKTOP_UI_COMPONENT_VERSION) => {
     const python = probePython(pythonPath, { runtimeRoot, runProcess });
     if (python.status !== 'ready') return { ...python, mode, installed };
-    const module = probeModule(python.python_path, { runtimeRoot, runProcess });
+    const module = probeModule(python.python_path, { runtimeRoot, runProcess, probeMode });
     if (module.status !== 'ready') {
       return { ...module, mode, installed, python_path: python.python_path };
     }
@@ -143,6 +147,7 @@ export function doctorDesktopUiComponent({
       python_path: python.python_path,
       python_version: python.python_version,
       dependencies: module.dependencies,
+      ...(probeMode === 'startup' ? {dependency_check: 'package_discovery'} : {}),
       ledger_access: false,
       library_access: false,
       transport: 'loopback_url_only',
@@ -310,8 +315,12 @@ export async function startDesktopUi({
   configuredPath = process.env.ATLAS_DESKTOP_PYTHON,
   spawnProcess = spawn,
   readyTimeoutMs = 15_000,
+  validatedCapability = null,
 } = {}) {
-  const capability = doctorDesktopUiComponent({ installationRoot, runtimeRoot, configuredPath });
+  // The CLI has already probed this exact capability while assembling runtime
+  // facts. Reuse it for this launch; independent callers still run the doctor.
+  const capability = validatedCapability
+    ?? doctorDesktopUiComponent({ installationRoot, runtimeRoot, configuredPath });
   if (capability.status !== 'ready') {
     const error = new Error(
       capability.next_step

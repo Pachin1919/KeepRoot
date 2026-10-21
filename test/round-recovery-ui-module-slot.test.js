@@ -41,9 +41,8 @@ async function installEnabledModule(f, server) {
   response = await post('/modules/package-install', { preview_token: packageToken, expected_sha256: packageSha, expected_revision: '0', request_key: 'module-install' });
   assert.equal(response.status, 303);
   html = await (await fetch(modules)).text();
-  const localRowStart = html.indexOf(`data-module-id="${manifest.module_id}"`); assert.notEqual(localRowStart, -1);
-  const localRowEnd = html.indexOf('</article>', localRowStart); assert.notEqual(localRowEnd, -1);
-  const localRow = html.slice(localRowStart, localRowEnd);
+  const localRow = [...html.matchAll(/<form\b[^>]*action="\/modules\/local-change"[^>]*>([\s\S]*?)<\/form>/gu)].map(match=>match[1]).find(form=>form.includes(`name="module_id" value="${manifest.module_id}"`) && form.includes('name="action" value="enable"'));
+  assert.ok(localRow, 'installed local Module exposes its own enable form');
   const revision = localRow.match(/name="expected_revision" value="(\d+)"/u)?.[1]; assert.ok(revision);
   response = await post('/modules/local-change', { module_id: manifest.module_id, action: 'enable', expected_revision: revision, request_key: 'module-enable' });
   assert.equal(response.status, 303);
