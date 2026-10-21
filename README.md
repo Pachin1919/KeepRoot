@@ -51,7 +51,9 @@ These commands do not connect an AI account, automatically authorize a directory
 - Toolbox text capture for supported public pages and conversation exports. Media downloading is outside this capture workflow.
 - English and Simplified Chinese UI, fixed reader monitors and read-only local Git history.
 
-**Preview limits:** core regression is a selected contract suite, not complete product acceptance. Native sustained performance, real automatic Hook triggering, different-product Host continuation and first use on other computers remain unverified. Historical suite results and the bounded maintenance priorities are in [CONTRIBUTING.md](CONTRIBUTING.md#validation-status-and-maintenance-priorities). There is no current claim of an all-green full suite or a stable installation release.
+**Installation:** the public repository can be downloaded and deployed by a host using the existing PowerShell installer, including Runtime, Skill and optional Python Desktop/content components. See the [installation and update guide](<docs/Atlas V1 使用说明书.md#windows安装与更新>). The distribution is currently `2.0.0-preview.1`; no standalone Windows asset has been uploaded to GitHub Releases.
+
+**Preview limits:** core regression is a selected contract suite, not complete product acceptance. Native sustained performance, real automatic Hook triggering, different-product Host continuation and first use on other computers remain unverified. Historical suite results and the bounded maintenance priorities are in [CONTRIBUTING.md](CONTRIBUTING.md#validation-status-and-maintenance-priorities). The full suite is not currently claimed to be all green.
 
 ## Develop and contribute
 
