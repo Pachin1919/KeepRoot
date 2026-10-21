@@ -59,7 +59,7 @@ npm test
 
 The retained Git history starts on **2026-07-20**. Internal development documents and machine-specific records were removed from every published revision. Original commit dates and branch relationships are retained; hashes changed during this cleanup. Obsolete preview tags were removed. Older branches represent earlier implementations, not the current supported preview.
 
-This repository is public source. A project-wide open-source license has not been selected; bundled third-party code retains its own licenses. Public source visibility does not grant a new license for original code or artwork. Keeproot name rights have not been cleared.
+Keeproot's original source code and accompanying documentation are licensed under the [MIT License](LICENSE), copyright (c) 2026 Pachin1919. Bundled third-party code and dependencies retain their own licenses and notices. Original artwork, logos and other non-code creative assets are not included in the MIT grant unless expressly stated. Keeproot name rights have not been cleared.
 
 ### Publishing changes
 
