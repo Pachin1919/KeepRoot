@@ -6,6 +6,37 @@ Keep files in their existing project folders. Keeproot gives a host and a user t
 
 **2.0.0-preview.1 · Windows preview · [MIT](LICENSE)**
 
+## Install on Windows
+
+1. Install [Node.js 24+](https://nodejs.org/en/download) and [Python 3.11+](https://www.python.org/downloads/windows/). Enable Python on PATH, then reopen PowerShell.
+2. [Download the main-branch source ZIP](https://github.com/Pachin1919/KeepRoot/archive/refs/heads/main.zip) and extract it completely. Open PowerShell in the extracted folder containing `install-atlas.ps1`.
+3. Install the Runtime, Keeproot Skill and Python Desktop/content components:
+
+```powershell
+$python = (Get-Command python.exe -ErrorAction Stop).Source
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-atlas.ps1 -Command install -DesktopPythonPath $python
+```
+
+Use an actual Python interpreter; if `python.exe` points to a Windows Store placeholder, set `$python` to the full path of your installed interpreter. The first Python dependency installation needs internet access. No `npm install` is required.
+
+Open **Keeproot** from the Start menu, or run the installed launcher. Check the installation with `doctor`; its JSON response should report `ok: true` and `data.status: "ok"`:
+
+```powershell
+& "$env:LOCALAPPDATA\Atlas\atlas-ui.cmd"
+& "$env:LOCALAPPDATA\Atlas\atlas.cmd" doctor --json
+```
+
+To update, close Keeproot, download and extract the latest source ZIP, then run this from the new source folder:
+
+```powershell
+$python = (Get-Command python.exe -ErrorAction Stop).Source
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-atlas.ps1 -Command upgrade -DesktopPythonPath $python
+```
+
+Updates retain existing state. Custom installations must also pass their original `-InstallRoot` and `-SkillRoot`.
+
+**Source ZIP and Windows package are different:** `Install-Keeproot.cmd` and `Update-Keeproot.cmd` require a Windows package with `keeproot-release.json`. Use the commands above for GitHub source ZIPs. No standalone Windows installer asset is currently published in GitHub Releases. [完整中文安装与更新说明](<docs/Atlas V1 使用说明书.md#windows安装与更新>)
+
 ## The core works without the UI
 
 ```text
@@ -50,8 +81,6 @@ These commands do not connect an AI account, automatically authorize a directory
 - Repeatable CSV/XLSX Work, verified saves, recorded source changes, Boards and declared-scope recovery.
 - Toolbox text capture for supported public pages and conversation exports. Media downloading is outside this capture workflow.
 - English and Simplified Chinese UI, fixed reader monitors and read-only local Git history.
-
-**Installation:** the public repository can be downloaded and deployed by a host using the existing PowerShell installer, including Runtime, Skill and optional Python Desktop/content components. See the [installation and update guide](<docs/Atlas V1 使用说明书.md#windows安装与更新>). The distribution is currently `2.0.0-preview.1`; no standalone Windows asset has been uploaded to GitHub Releases.
 
 **Preview limits:** core regression is a selected contract suite, not complete product acceptance. Native sustained performance, real automatic Hook triggering, different-product Host continuation and first use on other computers remain unverified. Historical suite results and the bounded maintenance priorities are in [CONTRIBUTING.md](CONTRIBUTING.md#validation-status-and-maintenance-priorities). The full suite is not currently claimed to be all green.
 

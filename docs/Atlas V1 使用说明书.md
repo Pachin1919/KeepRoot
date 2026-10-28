@@ -1,29 +1,37 @@
 # Atlas V1 使用说明书
 
-更新日期：2026-10-21
+更新日期：2026-10-28
 
 安装能力以本机 Runtime 为准。当前候选版本为 `2.0.0-preview.1`，Settings 另显示安装构建标识。先查看 `version --json`、`capabilities --json` 和 Settings；旧安装不会因为文档更新获得新能力。本文提供当前候选操作，原生窗口与真人验收仍单列。
 
 ## Windows安装与更新
 
-**当前可直接从公开源码部署，不需要等待Release。** 准备Windows、Node.js 24+和可信的Python 3.11+，从[公开仓库](https://github.com/Pachin1919/KeepRoot)下载完整源码或克隆指定提交。Codex等Host可在用户授权后完成下载和部署；在解压后的仓库根目录运行：
+**当前可直接从公开源码部署，不需要等待Release。** 准备Windows、[Node.js 24+](https://nodejs.org/en/download)和可信的[Python 3.11+](https://www.python.org/downloads/windows/)，安装解释器后重新打开PowerShell。从[公开仓库](https://github.com/Pachin1919/KeepRoot)的Code → Download ZIP下载，或直接下载[主分支源码ZIP](https://github.com/Pachin1919/KeepRoot/archive/refs/heads/main.zip)，完整解压。Codex等Host可在用户授权后完成下载和部署；在包含`install-atlas.ps1`的源码根目录打开PowerShell并运行：
 
 ```powershell
 $python = (Get-Command python.exe -ErrorAction Stop).Source
-.\install-atlas.ps1 -Command install -DesktopPythonPath $python
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-atlas.ps1 -Command install -DesktopPythonPath $python
 ```
 
 `$python`须指向实际Python解释器；如果PATH中只有Windows应用商店占位程序，请改为可信解释器的完整路径。安装器建立Runtime、Codex的`keeproot` Skill和独立Python组件环境；首次下载Python依赖需要联网。默认安装根仍为`%LOCALAPPDATA%\Atlas`，以兼容旧安装。安装后可从开始菜单打开Keeproot，Host通过`atlas.cmd`调用，Codex主Skill为`$keeproot`；新会话是否已发现Skill需在对应Host核对。
 
+也可直接启动并检查安装；`doctor`的JSON应返回`ok: true`及`data.status: "ok"`：
+
+```powershell
+& "$env:LOCALAPPDATA\Atlas\atlas-ui.cmd"
+& "$env:LOCALAPPDATA\Atlas\atlas.cmd" doctor --json
+```
+
 **源码更新：** 关闭Keeproot，下载所选新提交的完整源码，在其仓库根目录使用同一解释器运行：
 
 ```powershell
-.\install-atlas.ps1 -Command upgrade -DesktopPythonPath $python
+$python = (Get-Command python.exe -ErrorAction Stop).Source
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-atlas.ps1 -Command upgrade -DesktopPythonPath $python
 ```
 
 自定义安装需继续传入原`-InstallRoot`和`-SkillRoot`。升级保留state；失败时读取报错，不删除state或手工覆盖安装目录。安装器不自动联网检查或下载新版本，Node/Python解释器需事先准备。
 
-**Windows打包入口也已实现：** 带`keeproot-release.json`清单的完整Windows包可双击`Install-Keeproot.cmd`或`Update-Keeproot.cmd`。这两个入口会核对包清单；GitHub自动生成的Source code ZIP不含该清单，应使用上面的源码安装命令。当前版本为`2.0.0-preview.1`；截至2026-10-21，GitHub Releases尚未上传独立Windows安装资产。
+**Windows打包入口也已实现：** 带`keeproot-release.json`清单的完整Windows包可双击`Install-Keeproot.cmd`或`Update-Keeproot.cmd`。这两个入口会核对包清单；GitHub自动生成的源码ZIP不含该清单，不能使用这两个双击入口，应使用上面的PowerShell命令。当前版本为`2.0.0-preview.1`；截至2026-10-28，GitHub Releases尚未上传独立Windows安装资产。
 
 ## 可选开发试用示例
 
