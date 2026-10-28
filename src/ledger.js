@@ -1773,7 +1773,12 @@ export class Ledger {
 
   getReferencedBlobPaths() {
     return this.db.prepare(`
-      SELECT DISTINCT blob_path, content_hash FROM materials WHERE blob_path IS NOT NULL
+      SELECT blob_path, content_hash FROM materials WHERE blob_path IS NOT NULL
+      UNION
+      SELECT 'blobs/sha256/' || (file.value ->> '$.sha256'), file.value ->> '$.sha256'
+      FROM recovery_rounds, json_each(state_json, '$.nodes') AS node,
+        json_each(node.value, '$.state.files') AS file
+      WHERE file.value ->> '$.sha256' IS NOT NULL
     `).all().map((row) => this.#resolveBlobPath(row.blob_path, row.content_hash));
   }
 

@@ -19,20 +19,10 @@ function makeWorkId() {
 
 function countFiles(root) {
   const result = { files: 0, bytes: 0 };
-  if (!fs.existsSync(root)) return result;
-  function walk(directory) {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const absolute = path.join(directory, entry.name);
-      const stat = fs.lstatSync(absolute);
-      if (stat.isSymbolicLink()) continue;
-      if (stat.isDirectory()) walk(absolute);
-      else if (stat.isFile()) {
-        result.files += 1;
-        result.bytes += stat.size;
-      }
-    }
+  for (const file of regularFiles(root)) {
+    result.files++;
+    result.bytes += file.size;
   }
-  walk(root);
   return result;
 }
 
@@ -58,20 +48,15 @@ function readManifest(directory) {
   }
 }
 
-function regularFiles(root) {
-  const files = [];
-  if (!fs.existsSync(root)) return files;
-  function walk(directory) {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const absolute = path.join(directory, entry.name);
-      const stat = fs.lstatSync(absolute);
-      if (stat.isSymbolicLink()) continue;
-      if (stat.isDirectory()) walk(absolute);
-      else if (stat.isFile()) files.push({ path: absolute, size: stat.size, modified_ms: stat.mtimeMs });
-    }
+function* regularFiles(root) {
+  if (!fs.existsSync(root)) return;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const absolute = path.join(root, entry.name);
+    const stat = fs.lstatSync(absolute);
+    if (stat.isSymbolicLink()) continue;
+    if (stat.isDirectory()) yield* regularFiles(absolute);
+    else if (stat.isFile()) yield { path: absolute, size: stat.size, modified_ms: stat.mtimeMs };
   }
-  walk(root);
-  return files;
 }
 
 export class RuntimeStorage {
@@ -258,12 +243,11 @@ export class RuntimeStorage {
       throw new Error('Storage minAgeMs must be a non-negative finite number.');
     }
     const cutoff = Date.now() - minAgeMs;
-    const tempFiles = regularFiles(this.tempDir)
+    const tempFiles = [...regularFiles(this.tempDir)]
       .filter((item) => item.modified_ms <= cutoff)
       .map((item) => ({ path: item.path, bytes: item.size, reason: 'stale_technical_temp' }));
     const workItems = this.listWork()
-      .filter((item) => ['captured', 'released'].includes(item.status))
-      .filter((item) => Date.parse(item.updated_at) <= cutoff)
+      .filter((item) => ['captured', 'released'].includes(item.status) && Date.parse(item.updated_at) <= cutoff)
       .map((item) => ({
         work_id: item.work_id,
         path: path.dirname(item.payload_path),
@@ -273,7 +257,7 @@ export class RuntimeStorage {
         reason: 'captured_or_released_work_copy',
       }));
     const referenced = new Set(this.ledger.getReferencedBlobPaths().map((item) => path.resolve(item).toLowerCase()));
-    const blobFiles = regularFiles(path.join(this.stateDir, 'blobs', 'sha256'))
+    const blobFiles = [...regularFiles(path.join(this.stateDir, 'blobs', 'sha256'))]
       .filter((item) => item.modified_ms <= cutoff && !referenced.has(path.resolve(item.path).toLowerCase()))
       .map((item) => ({ path: item.path, bytes: item.size, reason: 'unreferenced_content_blob' }));
     return {
