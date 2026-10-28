@@ -629,7 +629,7 @@ export class Derived {
     const { diffText, diffHash } = buildCompleteDiff([change]);
     const startedAt = timestamp();
     const runId = requestedRunId ?? makeRunId();
-    const ids = this.ledger.createDerivedRun({
+    const ids = this.ledger.derived.createDerivedRun({
       runId,
       root,
       targetPath: normalizedTarget.relative,
@@ -664,11 +664,11 @@ export class Derived {
   }
 
   preview(runId) {
-    return this.ledger.getDerivedDetail(runId);
+    return this.ledger.derived.getDerivedDetail(runId);
   }
 
   approve(runId, { reason = null } = {}) {
-    return this.ledger.reviewDerived(runId, {
+    return this.ledger.derived.reviewDerived(runId, {
       decision: 'accepted',
       reason,
       reviewedAt: timestamp(),
@@ -676,7 +676,7 @@ export class Derived {
   }
 
   reject(runId, { reason = null } = {}) {
-    return this.ledger.reviewDerived(runId, {
+    return this.ledger.derived.reviewDerived(runId, {
       decision: 'rejected',
       reason,
       reviewedAt: timestamp(),
@@ -722,7 +722,7 @@ export class Derived {
         sourceRelativePath: input.source_relative_path,
       })),
     });
-    this.ledger.markDerivedRevised(runId, revised.run_id, reason, timestamp());
+    this.ledger.derived.markDerivedRevised(runId, revised.run_id, reason, timestamp());
     return revised;
   }
 
@@ -734,14 +734,14 @@ export class Derived {
     const fromRole = normalizeRole(detail.output.role);
     const toRole = normalizeRole(role);
     if (fromRole === toRole) {
-      return this.ledger.promoteDerivedArtifact(runId, {
+      return this.ledger.derived.promoteDerivedArtifact(runId, {
         fromRole, toRole, reason, promotedAt: timestamp(),
       });
     }
     if (!(ROLE_TRANSITIONS[fromRole] ?? []).includes(toRole)) {
       throw new Error(`Derived role transition ${fromRole} → ${toRole} is not allowed.`);
     }
-    return this.ledger.promoteDerivedArtifact(runId, {
+    return this.ledger.derived.promoteDerivedArtifact(runId, {
       fromRole, toRole, reason, promotedAt: timestamp(),
     });
   }
@@ -779,7 +779,7 @@ export class Derived {
       const absoluteInput = path.resolve(inputRoot, ...inputPath.split('/'));
       const observed = currentHash(absoluteInput);
       if (observed !== input.content_hash) {
-        this.ledger.markDerivedStale(runId, {
+        this.ledger.derived.markDerivedStale(runId, {
           reason: 'input_changed',
           input_path: input.path,
           expected_hash: input.content_hash,
@@ -801,7 +801,7 @@ export class Derived {
       && path.dirname(tempPath) === path.dirname(targetPath)
       && currentHash(tempPath) === detail.candidate.content_hash && sameFile(targetPath, tempPath);
     if (observedTarget !== null && !ownershipProven) {
-      this.ledger.markDerivedStale(runId, {
+      this.ledger.derived.markDerivedStale(runId, {
         reason: executionStarted && observedTarget === detail.candidate.content_hash
           ? 'ownership_unresolved' : 'target_claimed',
         target_path: detail.candidate.target_path,
@@ -812,7 +812,7 @@ export class Derived {
     }
     if (observedTarget === null) {
       internalPreflight?.(detail);
-      const started = this.ledger.startDerivedExecution(runId, timestamp(), publishOwnership(targetPath));
+      const started = this.ledger.derived.startDerivedExecution(runId, timestamp(), publishOwnership(targetPath));
       const publishTemp = started.ownership?.temp_path;
       if (!publishTemp || path.dirname(publishTemp) !== path.dirname(targetPath)) throw new Error('Derived publish ownership is invalid.');
       tempPath = publishTemp;
@@ -823,7 +823,7 @@ export class Derived {
         if (afterFailure === detail.candidate.content_hash && sameFile(targetPath, publishTemp)) {
           // The protected create completed or converged after Atlas recorded its intent.
         } else if (afterFailure !== null) {
-          this.ledger.markDerivedStale(runId, {
+          this.ledger.derived.markDerivedStale(runId, {
             reason: 'target_claimed_during_create',
             target_path: detail.candidate.target_path,
             expected_hash: null,
@@ -840,7 +840,7 @@ export class Derived {
       throw new Error('Derived verification failed: target does not match the approved Candidate.');
     }
     const executedAt = timestamp();
-    const receipt = this.ledger.finishDerivedExecution(runId, {
+    const receipt = this.ledger.derived.finishDerivedExecution(runId, {
       receipt: {
         run_id: runId,
         status: 'executed',
@@ -924,7 +924,7 @@ export class Derived {
     if (detail.run.status !== 'executed') {
       throw new Error(`Only an executed Derived run can be rolled back; current status is ${detail.run.status}.`);
     }
-    const consumers = this.ledger.getDerivedConsumers(runId);
+    const consumers = this.ledger.derived.getDerivedConsumers(runId);
     if (consumers.length) {
       throw new RollbackConflictError([{
         path: detail.candidate.target_path,
@@ -958,12 +958,12 @@ export class Derived {
           current_kind: verified === 'unsupported' ? 'unsupported' : verified === null ? 'missing' : 'file',
         }]);
       }
-      this.ledger.startDerivedRollback(runId, timestamp());
+      this.ledger.derived.startDerivedRollback(runId, timestamp());
       fs.rmSync(targetPath);
     }
     if (fs.existsSync(targetPath)) throw new Error('Derived rollback verification failed.');
     const rolledBackAt = timestamp();
-    return this.ledger.finishDerivedRollback(runId, {
+    return this.ledger.derived.finishDerivedRollback(runId, {
       run_id: runId,
       status: 'rolled_back',
       removed_files: 1,

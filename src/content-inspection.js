@@ -254,7 +254,6 @@ export function inspectContent({
   const { inspectionId, cachePath } = inspectionCache({
     stateDir: stateDirInput, filePath, sourceHash, ...options,
   });
-  const cacheDirectory = path.dirname(cachePath);
   const cached = fs.existsSync(cachePath)
     ? parseCached(cachePath, sourceHash, options.purpose, options.maxCharacters, options.sheet)
     : null;

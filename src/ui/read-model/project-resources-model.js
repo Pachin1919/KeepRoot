@@ -1,29 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { contentFileFingerprint, contentFilePath, readCachedContentInspection } from '../../content-inspection.js';
-import { browseProjectFiles, listProjectFolders, projectPath, searchProjectFiles } from '../project-files.js';
+import { browseProjectFiles, listProjectFolders, projectPath } from '../project-files.js';
 import { savedResultFreshness, sourceVersionPolicy } from '../services/saved-work-service.js';
 import { buildResourceImpactLanes } from '../services/resource-impact-service.js';
-
-function samePath(left, right) {
-  if (typeof left !== 'string' || typeof right !== 'string' || !left || !right) return false;
-  return process.platform === 'win32'
-    ? path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase()
-    : path.resolve(left) === path.resolve(right);
-}
 
 function resourceType(filePath) {
   const extension = path.extname(filePath).slice(1).toUpperCase();
   return extension || 'Local file';
-}
-
-function resourceWork(recentWork, projectId, filePath, resourceId = null) {
-  if (resourceId) {
-    const matched = recentWork.find((work) => work.project?.id === projectId && work.resource_id === resourceId);
-    if (matched) return matched;
-  }
-  return recentWork.find((work) => work.project?.id === projectId
-    && (!resourceId || !work.resource_id) && samePath(work.file_path, filePath)) ?? null;
 }
 
 function sourceFingerprintStatus(work, filePath, fingerprint = contentFileFingerprint) {
@@ -50,24 +34,12 @@ function savedSourceStatus(saved, fingerprint = contentFileFingerprint) {
   }
 }
 
-function currentResourceActivity(currentActivity, projectId, filePath, work, resourceId = null) {
-  const completedAt = [work?.inspected_at, work?.last_continued_at]
-    .filter((value) => typeof value === 'string').sort().at(-1) ?? null;
-  const projectEntries = currentActivity.filter((entry) => entry.project?.id === projectId);
-  const candidates = resourceId
-    ? (() => {
-      const explicit = projectEntries.filter((entry) => entry.resource_id === resourceId);
-      return explicit.length ? explicit : projectEntries.filter((entry) => !entry.resource_id && samePath(entry.file_path, filePath));
-    })()
-    : projectEntries.filter((entry) => samePath(entry.file_path, filePath));
-  return candidates
-    .sort((left, right) => String(right.updated_at ?? right.started_at ?? '').localeCompare(String(left.updated_at ?? left.started_at ?? '')))
-    .find((entry) => !(['failed', 'interrupted'].includes(entry.status)
-      && completedAt && String(entry.updated_at ?? entry.started_at ?? '') <= completedAt)) ?? null;
-}
-
 function latestWorkedAt(...values) {
-  return values.filter((value) => typeof value === 'string' && value.length > 0).sort().at(-1) ?? null;
+  let latest = null;
+  for (const value of values) {
+    if (typeof value === 'string' && value.length > 0 && (latest === null || value > latest)) latest = value;
+  }
+  return latest;
 }
 
 function workSessionTimes(workSessions) {
@@ -81,7 +53,7 @@ function workSessionTimes(workSessions) {
   return latestByResource;
 }
 
-function resourceReadContext(resourceFacts) {
+function resourceReadContext(resourceFacts, recentWork, savedWork, currentActivity, projectId) {
   const key = value => typeof value === 'string' && value ? (process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value)) : null;
   const facts = new Map();
   for (const fact of resourceFacts) {
@@ -89,7 +61,28 @@ function resourceReadContext(resourceFacts) {
     if (fileKey && !facts.has(fileKey)) facts.set(fileKey, fact);
   }
   const fingerprints = new Map();
-  return { fact: file => facts.get(key(file)) ?? null, fingerprint(file) {
+  const index = (entries, fileProperty) => {
+    const byId = Map.groupBy(entries, entry => entry.resource_id);
+    const byPath = Map.groupBy(entries, entry => key(entry[fileProperty]));
+    return (id, file) => (id ? byId.get(id) : null)
+      ?? (byPath.get(key(file)) ?? []).filter(entry => !id || !entry.resource_id);
+  };
+  const activities = currentActivity.filter(entry => entry.project?.id === projectId)
+    .sort((left, right) => String(right.updated_at ?? right.started_at ?? '').localeCompare(String(left.updated_at ?? left.started_at ?? '')));
+  const sources = savedWork.flatMap((saved, ordinal) => (saved.sources?.length ? saved.sources : [{ path: saved.source_path }])
+    .map(source => ({ ...source, saved, ordinal })));
+  const sourcesById = Map.groupBy(sources, source => source.resource_id);
+  const sourcesByPath = Map.groupBy(sources, source => key(source.path));
+  return {
+    work: index(recentWork.filter(entry => entry.project?.id === projectId), 'file_path'),
+    saved: index(savedWork, 'result_path'),
+    activity: index(activities, 'file_path'),
+    created(id, file) {
+      const atPath = sourcesByPath.get(key(file)) ?? [];
+      const matches = id ? [...(sourcesById.get(id) ?? []), ...atPath.filter(source => !source.resource_id)] : atPath;
+      return [...new Set(matches.toSorted((left, right) => left.ordinal - right.ordinal).map(source => source.saved))];
+    },
+    fact: file => facts.get(key(file)) ?? null, fingerprint(file) {
     // Request-local only. A new page observes later edits rather than reusing this map.
     const fileKey = path.resolve(file);
     if (!fingerprints.has(fileKey)) fingerprints.set(fileKey, contentFileFingerprint(file));
@@ -97,20 +90,17 @@ function resourceReadContext(resourceFacts) {
   } };
 }
 
-function resourceRecord(item, root, recentWork, projectId, savedWork = [], currentActivity = [], resourceFacts = [], sessionTimes = null, readContext = null) {
+function resourceRecord(item, root, readContext, sessionTimes) {
   const filePath = path.join(root, item.relative_path);
-  const fact = readContext ? readContext.fact(filePath) : resourceFacts.find((entry) => samePath(entry.path ?? entry.file_path ?? '', filePath)) ?? null;
+  const fact = readContext.fact(filePath);
   const resourceId = fact?.resource_id ?? fact?.resource?.id ?? null;
-  const work = resourceWork(recentWork, projectId, filePath, resourceId);
+  const work = readContext.work(resourceId, filePath)[0] ?? null;
   const transfer = work?.project_transfer ?? null;
-  const saved = resourceId
-    ? savedWork.find((entry) => entry.resource_id === resourceId) ?? savedWork.find((entry) => !entry.resource_id && samePath(entry.result_path, filePath))
-    : savedWork.find((entry) => samePath(entry.result_path, filePath)) ?? null;
-  const createdWork = savedWork.filter((entry) => {
-    const sources = entry.sources?.length ? entry.sources : [{ resource_id: null, path: entry.source_path }];
-    return sources.some((source) => resourceId ? source.resource_id === resourceId || (!source.resource_id && samePath(source.path, filePath)) : samePath(source.path, filePath));
-  });
-  const activity = currentResourceActivity(currentActivity, projectId, filePath, work, resourceId);
+  const saved = readContext.saved(resourceId, filePath)[0] ?? null;
+  const createdWork = readContext.created(resourceId, filePath);
+  const completedAt = latestWorkedAt(work?.inspected_at, work?.last_continued_at);
+  const activity = readContext.activity(resourceId, filePath).find(entry => !(['failed', 'interrupted'].includes(entry.status)
+    && completedAt && String(entry.updated_at ?? entry.started_at ?? '') <= completedAt)) ?? null;
   return {
     resource_fact: fact,
     resource_id: resourceId ?? work?.resource_id ?? saved?.resource_id ?? activity?.resource_id ?? null,
@@ -126,7 +116,7 @@ function resourceRecord(item, root, recentWork, projectId, savedWork = [], curre
       last_continued_at: work.last_continued_at,
       purpose: work.inspect.purpose,
       sheet: work.inspect.sheet,
-      source_status: readContext?.metadataOnly ? 'Not checked' : sourceFingerprintStatus(work, filePath, readContext?.fingerprint),
+      source_status: readContext.metadataOnly ? 'Not checked' : sourceFingerprintStatus(work, filePath, readContext.fingerprint),
       initiated_by: work.initiated_by,
       inspection_cache_hit: work.inspection_cache_hit,
       result_summary: work.result_summary,
@@ -135,7 +125,7 @@ function resourceRecord(item, root, recentWork, projectId, savedWork = [], curre
     } : null,
     // Disk modification time is deliberately not presented as "Last worked".
     // Atlas only knows a file was worked when it has a Recent Work, Saved Work, or Table Work fact.
-    last_worked_at: latestWorkedAt(work?.last_continued_at, work?.inspected_at, saved?.created_at, resourceId ? sessionTimes?.get(resourceId) : null),
+    last_worked_at: latestWorkedAt(work?.last_continued_at, work?.inspected_at, saved?.created_at, resourceId ? sessionTimes.get(resourceId) : null),
     added_from: transfer ? {
       origin_file: transfer.origin.file_path,
       saved_at: transfer.saved_at,
@@ -147,7 +137,7 @@ function resourceRecord(item, root, recentWork, projectId, savedWork = [], curre
       version_policy: saved.version_policy ?? 'pinned_version',
       result_summary: saved.result_summary, created_at: saved.created_at,
       undo_available: saved.write?.undo_available === true,
-      source_status: readContext?.metadataOnly ? 'Not checked' : savedSourceStatus(saved, readContext?.fingerprint),
+      source_status: readContext.metadataOnly ? 'Not checked' : savedSourceStatus(saved, readContext.fingerprint),
     } : null,
     created_work: createdWork.map((savedItem) => ({ work_id: savedItem.work_id, name: path.basename(savedItem.result_path), result_path: savedItem.result_path, relative_path: path.relative(root, savedItem.result_path).replaceAll('\\', '/'), created_at: savedItem.created_at, version_policy: savedItem.version_policy ?? 'pinned_version' })),
     activity: activity ? {
@@ -240,7 +230,7 @@ function missingSources(savedWork) {
     .map((item) => ({ name: path.basename(item.source_path), source_path: item.source_path }));
 }
 
-function focusedRecord(root, focusedPath, recentWork, projectId, savedWork, currentActivity, resourceFacts, sessionTimes = null, readContext = null) {
+function focusedRecord(root, focusedPath, readContext, sessionTimes) {
   if (!focusedPath) return null;
   try {
     const filePath = projectPath(root, focusedPath);
@@ -252,28 +242,11 @@ function focusedRecord(root, focusedPath, recentWork, projectId, savedWork, curr
       bytes: stat.size,
       modified_at: stat.mtime.toISOString(),
     };
-    const record = resourceRecord(item, root, recentWork, projectId, savedWork, currentActivity, resourceFacts, sessionTimes, readContext);
+    const record = resourceRecord(item, root, readContext, sessionTimes);
     return { ...record, state: resourceState(record) };
   } catch {
     return null;
   }
-}
-
-export function summarizeProjectResources({ project, root, recentWork, savedWork = [], savedWorkError = false }) {
-  const listed = searchProjectFiles(root, '');
-  const records = listed.items.map((item) => resourceRecord(item, root, recentWork, project.id, savedWork));
-  const known_sources = records.filter((item) => item.added_from && !item.saved_work).length;
-  const created_work = records.filter((item) => item.saved_work).length;
-  return {
-    known_sources,
-    created_work,
-    changed_resources: records.filter((resource) => resourceState(resource) === 'changed').length,
-    current_output: null,
-    other_files: records.filter((item) => !item.added_from && !item.saved_work).length,
-    saved_work_error: savedWorkError,
-    last_saved_at: savedWork.reduce((latest, item) => String(item.created_at ?? '').localeCompare(latest) > 0 ? String(item.created_at) : latest, ''),
-    truncated: listed.truncated,
-  };
 }
 
 function representationFor(resource, stateDir) {
@@ -322,15 +295,17 @@ export function buildProjectResourcesModel({ project, root, base, recentWork, sa
   const requestedFolderExists = requestedFolder === browseFolder;
   const visibleItems = listed.items.filter(item => item.kind === 'file');
   const sessionTimes = workSessionTimes(workSessions);
-  const readContext = resourceReadContext(resourceFacts);
+  const readContext = resourceReadContext(resourceFacts, recentWork, savedWork, currentActivity, project.id);
   readContext.metadataOnly = true;
+  const known_sources = [], created_work = [], other_files = [];
+  let changedResources = 0;
   const records = visibleItems.map((item) => {
-    const record = resourceRecord(item, root, recentWork, project.id, savedWork, currentActivity, resourceFacts, sessionTimes, readContext);
-    return { ...record, state: resourceState(record) };
+    const record = resourceRecord(item, root, readContext, sessionTimes);
+    record.state = resourceState(record);
+    (record.saved_work ? created_work : record.added_from ? known_sources : other_files).push(record);
+    if (record.state === 'changed') changedResources++;
+    return record;
   });
-  const known_sources = records.filter((item) => item.added_from && !item.saved_work);
-  const created_work = records.filter((item) => item.saved_work);
-  const other_files = records.filter((item) => !item.added_from && !item.saved_work);
   const explicitFocus = typeof focusedPath === 'string' && focusedPath.length > 0;
   const ledgerFocus = typeof focusedResourceId === 'string' ? resourceFacts.find((item) => item.resource_id === focusedResourceId) ?? null : null;
   const diskLedgerFocus = ledgerFocus ? records.find((item) => item.resource_id === ledgerFocus.resource_id) ?? null : null;
@@ -342,7 +317,7 @@ export function buildProjectResourcesModel({ project, root, base, recentWork, sa
     ? ledgerRelativePath
     : null;
   const focusedPathRecord = ledgerFocus && !diskLedgerFocus && (explicitFocus || ledgerPathInsideProject)
-    ? focusedRecord(root, explicitFocus ? focusedPath : ledgerPathInsideProject, recentWork, project.id, savedWork, currentActivity, resourceFacts, sessionTimes, readContext)
+    ? focusedRecord(root, explicitFocus ? focusedPath : ledgerPathInsideProject, readContext, sessionTimes)
     : null;
   const verifiedPathLedgerFocus = focusedPathRecord?.resource_id === ledgerFocus?.resource_id ? focusedPathRecord : null;
   const localLedgerFocus = diskLedgerFocus ?? verifiedPathLedgerFocus;
@@ -351,7 +326,7 @@ export function buildProjectResourcesModel({ project, root, base, recentWork, sa
     : { ...ledgerFocus, name: ledgerFocus.resource?.display_name ?? ledgerFocus.name ?? 'Resource', type: ledgerFocus.resource?.kind ?? 'Local file', relative_path: null, open_available: false, state: ledgerFocus.status, last_known_path: ledgerFocus.path, last_known_hash: ledgerFocus.content_hash, last_known_bytes: ledgerFocus.bytes, last_known_modified_at: ledgerFocus.modified_at }
     : explicitFocus
     ? records.find((item) => item.relative_path === focusedPath)
-      ?? focusedRecord(root, focusedPath, recentWork, project.id, savedWork, currentActivity, resourceFacts, sessionTimes, readContext)
+      ?? focusedRecord(root, focusedPath, readContext, sessionTimes)
     : null;
   const focused = focused_resource ? { ...focused_resource, redo_save: redoSave ? { save_id: redoSave.save_id ?? redoSave.work_id } : null, actions: recoveryActions(focused_resource, project.id), representation: representationFor(focused_resource, stateDir) } : null;
   const resultWorkId = focused?.saved_work?.parameters?.work_session_id ?? null;
@@ -385,7 +360,7 @@ export function buildProjectResourcesModel({ project, root, base, recentWork, sa
     base,
     known_sources,
     created_work,
-    changed_resources: records.filter((resource) => resourceState(resource) === 'changed').length,
+    changed_resources: changedResources,
     current_output: null,
     other_files,
     tree,
@@ -421,7 +396,7 @@ export function buildReaderResourceContext({ project, base, reader, resourceFact
   const resultWorkId = saved?.parameters?.work_session_id;
   resource.related_work = workSessions.filter(work => work.session_id === resultWorkId || work.sources?.some(source => source.resource_id === reader.resource_id)).map(work => {
     const result = work.latest_save_id ? savedWork.find(item => item.work_id === work.latest_save_id || item.save_id === work.latest_save_id) : null;
-    const freshness = result ? savedResultFreshness(result, { sourceFreshness: work.freshness, versionPolicy: sourceVersionPolicy(work.sources, result.version_policy) }) : null;
+    const freshness = result ? savedResultFreshness(result) : null;
     return { session_id: work.session_id, intent: work.intent, revision: work.revision,
       recipe_label: `Recipe v${work.recipe?.version ?? 1}`, freshness_label: work.freshness?.label ?? 'Not checked',
       result_label: result ? `${path.basename(result.result_path)} · ${freshness.label}` : 'No saved Result',
@@ -446,6 +421,6 @@ export function buildProjectResourceDetailModel({ project, root, base, recentWor
     project,
     root,
     base,
-    resource: resourceRecord(item, root, recentWork, project.id, savedWork, currentActivity, resourceFacts, workSessionTimes(workSessions)),
+    resource: resourceRecord(item, root, resourceReadContext(resourceFacts, recentWork, savedWork, currentActivity, project.id), workSessionTimes(workSessions)),
   };
 }

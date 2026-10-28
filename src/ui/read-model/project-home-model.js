@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { contentFilePath } from '../../content-inspection.js';
 import { projectPath } from '../project-files.js';
-import { savedResultFreshness, savedResultState, sourceVersionPolicy } from '../services/saved-work-service.js';
+import { savedResultFreshness, savedResultOutput } from '../services/saved-work-service.js';
 
 function resultStateDetail(status) {
   return {
@@ -31,14 +31,13 @@ function workPosition(work) {
   return 'Review preview and save';
 }
 
-function workSummary(work, resultById, getResultState) {
+function workSummary(work, resultById, getResultOutput) {
   const result = work.latest_save_id ? resultById.get(work.latest_save_id) ?? null : null;
-  const resultState = result ? getResultState(result) : null;
-  const resultFreshness = result && getResultState.metadataOnly ? {label:'Not checked'} : result ? savedResultFreshness(result, { sourceFreshness: work.freshness, versionPolicy: sourceVersionPolicy(work.sources, result.version_policy) }) : null;
+  const resultFreshness = result && getResultOutput.metadataOnly ? { label: 'Not checked' } : result ? savedResultFreshness(result, { output: getResultOutput(result) }) : null;
   return {
     revision: work.revision,
     recipe_label: work.mapping_complete ? `v${work.recipe?.version ?? 1} ready` : `v${work.recipe?.version ?? 1} · mapping incomplete`,
-    result_label: result ? `${path.basename(result.result_path ?? work.latest_save_id)} · ${resultFreshness?.label ?? resultState}` : 'No saved Result',
+    result_label: result ? `${path.basename(result.result_path ?? work.latest_save_id)} · ${resultFreshness.label}` : 'No saved Result',
     freshness_label: work.freshness?.label ?? 'Not checked',
     reuse_action: `/work/${encodeURIComponent(work.session_id)}/reuse`,
   };
@@ -65,9 +64,9 @@ function resultHref(root, base, result, workById) {
   return relative ? `${base}/resources?path=${encodeURIComponent(relative)}` : null;
 }
 
-function resourceResolution({ root, base, reference, resourceFacts }) {
+function resourceResolution({ root, base, reference, resourceById }) {
   const fact = reference.resource_id
-    ? resourceFacts.find((item) => item.resource_id === reference.resource_id) ?? null
+    ? resourceById.get(reference.resource_id) ?? null
     : null;
   if (fact) {
     const title = fact.resource?.display_name ?? reference.label ?? path.basename(fact.path ?? reference.relative_path ?? reference.id);
@@ -107,7 +106,7 @@ function fallbackItem(base, reference, reason) {
   };
 }
 
-function resolveReference({ project, root, base, reference, resourceFacts, workById, resultById, viewById, getResultState }) {
+function resolveReference({ project, root, base, reference, resourceById, workById, resultById, viewById, getResultOutput }) {
   if (!reference) return null;
   if (reference.kind === 'work') {
     const work = workById.get(reference.id);
@@ -115,11 +114,11 @@ function resolveReference({ project, root, base, reference, resourceFacts, workB
     return {
       kind: 'work', title: reference.label && reference.label !== 'Continue data Work' ? reference.label : work.intent ?? 'Continue data Work', detail: `${work.sources.length} Source${work.sources.length === 1 ? '' : 's'} · revision ${work.revision}`,
       position: workPosition(work), href: `/work/${encodeURIComponent(work.session_id)}`, updated_at: displayTime(reference.updated_at ?? work.updated_at), notice: null,
-      ...workSummary(work, resultById, getResultState),
+      ...workSummary(work, resultById, getResultOutput),
     };
   }
   if (reference.kind === 'resource') {
-    const resource = resourceResolution({ root, base, reference, resourceFacts });
+    const resource = resourceResolution({ root, base, reference, resourceById });
     return resource ? { kind: 'resource', ...resource, position: resource.detail, updated_at: displayTime(reference.updated_at), notice: null }
       : fallbackItem(base, reference, 'This Resource record and file are unavailable.');
   }
@@ -137,7 +136,7 @@ function resolveReference({ project, root, base, reference, resourceFacts, workB
     }
     const href = resultHref(root, base, result, workById);
     if (!href) return fallbackItem(base, reference, 'This Result no longer has an available detail route.');
-    const status = getResultState(result);
+    const { status } = getResultOutput(result);
     return {
       kind: 'result', title: reference.label ?? path.basename(result.result_path ?? reference.id),
       status, detail: resultStateDetail(status), position: status === 'verified' ? 'Open Result' : 'Review Result', href,
@@ -165,8 +164,8 @@ function resolveReference({ project, root, base, reference, resourceFacts, workB
   return fallbackItem(base, reference, 'This Saved View is not available in the current slice.');
 }
 
-function recentResult(root, base, result, workById, pinnedKeys, getResultState) {
-  const status = getResultState(result);
+function recentResult(root, base, result, workById, pinnedKeys, getResultOutput) {
+  const { status } = getResultOutput(result);
   return {
     id: result.work_id,
     title: path.basename(result.result_path ?? result.work_id),
@@ -179,29 +178,31 @@ function recentResult(root, base, result, workById, pinnedKeys, getResultState) 
 }
 
 export function buildProjectHomeModel({ project, root, base, homeState, resourceFacts = [], workSessions = [], savedWork = [], savedViews = [], currentActivity = [], hasProjectFiles = false, metadataOnly = false }) {
+  const resourceById = new Map();
+  for (const fact of resourceFacts) if (!resourceById.has(fact.resource_id)) resourceById.set(fact.resource_id, fact);
   const workById = new Map(workSessions.map((item) => [item.session_id, item]));
   const resultById = new Map(savedWork.flatMap((item) => [[item.work_id, item], ...(item.save_id && item.save_id !== item.work_id ? [[item.save_id, item]] : [])]));
   const viewById = new Map(savedViews.map((item) => [item.view_id, item]));
-  const resultStates = new Map();
-  const getResultState = (result) => {
-    if (!resultStates.has(result.work_id)) resultStates.set(result.work_id, metadataOnly ? (result.status === 'undone' ? 'undone' : 'not_checked') : savedResultState(result));
-    return resultStates.get(result.work_id);
+  const resultOutputs = new Map();
+  const getResultOutput = (result) => {
+    if (!resultOutputs.has(result.work_id)) resultOutputs.set(result.work_id, metadataOnly ? { status: result.status === 'undone' ? 'undone' : 'not_checked', sha256: null } : savedResultOutput(result));
+    return resultOutputs.get(result.work_id);
   };
-  getResultState.metadataOnly = metadataOnly;
-  const continueItem = resolveReference({ project, root, base, reference: homeState.continue, resourceFacts, workById, resultById, viewById, getResultState });
+  getResultOutput.metadataOnly = metadataOnly;
+  const continueItem = resolveReference({ project, root, base, reference: homeState.continue, resourceById, workById, resultById, viewById, getResultOutput });
   const pinnedKeys = new Set(homeState.pinned.map((item) => `${item.kind}:${item.id}`));
   const pinned = homeState.pinned.map((reference) => {
-    const resolved = resolveReference({ project, root, base, reference, resourceFacts, workById, resultById, viewById, getResultState });
+    const resolved = resolveReference({ project, root, base, reference, resourceById, workById, resultById, viewById, getResultOutput });
     return resolved && {
       key: `${reference.kind}:${reference.id}`, kind: reference.kind, id: reference.id,
       title: resolved.title, detail: resolved.detail, href: resolved.href, status: resolved.status ?? (resolved.notice ? 'unavailable' : 'available'), updated_at: resolved.updated_at,
     };
   }).filter(Boolean);
   const archivedResourceIds = new Set(resourceFacts.filter((fact) => fact.missing_record_archived).map((fact) => fact.resource_id));
-  const recentResults = [...savedWork]
+  const recentResults = savedWork
     .filter((item) => !archivedResourceIds.has(item.resource_id))
     .sort((left, right) => String(right.executed_at ?? right.created_at ?? '').localeCompare(String(left.executed_at ?? left.created_at ?? '')))
-    .slice(0, 6).map((item) => recentResult(root, base, item, workById, pinnedKeys, getResultState));
+    .slice(0, 6).map((item) => recentResult(root, base, item, workById, pinnedKeys, getResultOutput));
   const contextualResourceIds = new Set([
     ...workSessions.flatMap((work) => (work.sources ?? []).map((source) => source.resource_id).filter(Boolean)),
     ...savedWork.flatMap((result) => [result.resource_id, ...(result.sources ?? []).map((source) => source.resource_id)].filter(Boolean)),
@@ -214,7 +215,7 @@ export function buildProjectHomeModel({ project, root, base, homeState, resource
   const archivedMissing = missingFacts.filter((fact) => fact.missing_record_archived);
   const attention = [];
   for (const changed of homeState.check?.changed_resources ?? []) {
-    const fact = resourceFacts.find((item) => item.resource_id === changed.resource_id);
+    const fact = resourceById.get(changed.resource_id);
     attention.push({
       key: `resource-change:${changed.resource_id}`,
       title: changed.title ?? fact?.resource?.display_name ?? changed.resource_id,
@@ -223,7 +224,7 @@ export function buildProjectHomeModel({ project, root, base, homeState, resource
       status: 'changed',
     });
   }
-  for (const [id, status] of resultStates) {
+  for (const [id, { status }] of resultOutputs) {
     if (['verified', 'undone', 'not_checked'].includes(status)) continue;
     const result = resultById.get(id);
     attention.push({ key: `result:${id}`, title: path.basename(result.result_path ?? id), detail: resultStateDetail(status), href: resultHref(root, base, result, workById), status });
@@ -249,7 +250,7 @@ export function buildProjectHomeModel({ project, root, base, homeState, resource
         : { state: 'not_checked', checked_at: null, scope_label: 'Tracked Project Resources', items: [] };
   const otherWork = workSessions
     .filter((item) => !homeState.continue || homeState.continue.kind !== 'work' || item.session_id !== homeState.continue.id)
-    .map((item) => ({ id: item.session_id, title: item.intent ?? 'Open data Work', detail: `${item.sources.length} Source${item.sources.length === 1 ? '' : 's'} · revision ${item.revision}`, position: workPosition(item), href: `/work/${encodeURIComponent(item.session_id)}`, updated_at: displayTime(item.updated_at), ...workSummary(item, resultById, getResultState) }));
+    .map((item) => ({ id: item.session_id, title: item.intent ?? 'Open data Work', detail: `${item.sources.length} Source${item.sources.length === 1 ? '' : 's'} · revision ${item.revision}`, position: workPosition(item), href: `/work/${encodeURIComponent(item.session_id)}`, updated_at: displayTime(item.updated_at), ...workSummary(item, resultById, getResultOutput) }));
   return {
     project, base, continue_item: continueItem, other_work: otherWork, pinned, changes, recent_results: recentResults,
     missing_records: {

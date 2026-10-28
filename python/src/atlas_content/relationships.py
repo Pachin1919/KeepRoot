@@ -161,13 +161,15 @@ def _compare_table_rows(ah, a, bh, b, key_column, period_column, event_date_colu
     for column in (key_column, period_column, event_date_column):
         if column and column not in ah: raise ValueError("A requested comparison column does not match an exact header.")
     columns = sorted(ah)
+    left_periods = {row[period_column] for row in a} if period_column else set()
+    right_periods = {row[period_column] for row in b} if period_column else set()
     times = {"event_dates": {"left": _event_dates(a, event_date_column), "right": _event_dates(b, event_date_column)},
              "business_period": {"column": period_column, "basis": "literal_column_values" if period_column else "not_requested",
-                                 "left_distinct_count": len({row[period_column] for row in a}) if period_column else None,
-                                 "right_distinct_count": len({row[period_column] for row in b}) if period_column else None,
-                                 "left_values": sorted({row[period_column] for row in a})[:50] if period_column else [],
-                                 "right_values": sorted({row[period_column] for row in b})[:50] if period_column else [],
-                                 "samples_truncated": bool(period_column and (len({row[period_column] for row in a}) > 50 or len({row[period_column] for row in b}) > 50))}}
+                                 "left_distinct_count": len(left_periods) if period_column else None,
+                                 "right_distinct_count": len(right_periods) if period_column else None,
+                                 "left_values": sorted(left_periods)[:50],
+                                 "right_values": sorted(right_periods)[:50],
+                                 "samples_truncated": len(left_periods) > 50 or len(right_periods) > 50}}
     summary = {"left_records": len(a), "right_records": len(b), "added": None, "removed": None, "changed": None, "unchanged": None}
     if not key_column:
         return _detail_result("table_rows", "uncertain", summary, [], reasons=["explicit_key_column_required"],

@@ -6,6 +6,7 @@ import { Registry } from '../src/registry.js';
 import { SaveService } from '../src/save-service.js';
 import { startAtlasUiServer } from '../src/ui-server.js';
 import { createSavedWorkService } from '../src/ui/services/saved-work-service.js';
+import { beginCurrentActivity, failCurrentActivity, readCurrentActivityState } from '../src/ui/current-activity.js';
 import { renderActivityFragment } from '../src/ui/views/activity-view.js';
 import vm from 'node:vm';
 
@@ -16,6 +17,23 @@ function fixture(t) {
  return dir;
 }
 const receipt=(id,project)=>({save_id:id,status:'executed',project:{id:project,name:project},target:{path:'example.md'},verification:{sha256:'a'.repeat(64)},created_at:'2026-10-14T00:00:00Z'});
+
+test('Activity dismiss rejects an invalid token without removing the activity', async t => {
+ const stateDir=fixture(t), registry=new Registry({stateDir});
+ const activity=beginCurrentActivity({stateDir,filePath:path.join(stateDir,'item.txt')});
+ failCurrentActivity({stateDir,activityId:activity.activity_id,error:new Error('failed')});
+ const server=await startAtlasUiServer({stateDir,registry,rules:{},intake:{stateDir}});
+ t.after(async()=>{await server.close();registry.dispose();fs.rmSync(stateDir,{recursive:true,force:true});});
+ const response=await fetch(server.workspace_url+'activity/dismiss',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({csrf:'invalid',activity_id:activity.activity_id})});
+ assert.equal(response.status,403);
+ assert.match(await response.text(),/session token is invalid/u);
+ assert.equal(readCurrentActivityState(stateDir).items[0].activity_id,activity.activity_id);
+ const html=await (await fetch(server.workspace_url+'activity')).text();
+ const csrf=html.match(/name="csrf" value="([a-f0-9]+)"/u)?.[1]; assert.ok(csrf);
+ const dismissed=await fetch(server.workspace_url+'activity/dismiss',{method:'POST',redirect:'manual',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({csrf,activity_id:activity.activity_id})});
+ assert.equal(dismissed.status,303);
+ assert.equal(readCurrentActivityState(stateDir).items.length,0);
+});
 
 test('Projects loads one fresh Save projection per request, preserving each Project and user names', async t=>{
  const stateDir=fixture(t);
@@ -34,6 +52,20 @@ test('Projects loads one fresh Save projection per request, preserving each Proj
  calls=0;
  await fetch(server.workspace_url+'projects');
  assert.equal(calls,2,'A later request must get fresh state, not a persistent cached receipt.');
+});
+
+test('Projects selects the latest read or Save for each Project without mixing histories', async t=>{
+ const stateDir=fixture(t),registry=new Registry({stateDir});
+ const projects=['First','Second'].map(name=>({id:registry.create({name,currentPath:name}).project_id,name}));
+ const work=(id,project,file,at)=>({work_id:`RWK-${id.repeat(36)}`,file_path:file,inspection_id:'inspection',cache_reference:'cache',source_fingerprint:{sha256:'a'.repeat(64)},inspect:{},project,inspected_at:at});
+ fs.writeFileSync(path.join(stateDir,'ui','recent-work.json'),JSON.stringify({items:[work('1',projects[0],'first-new.txt','2026-10-15T00:00:00Z'),work('2',projects[1],'second-old.txt','2026-10-13T00:00:00Z')]}));
+ fs.writeFileSync(path.join(stateDir,'ui','saved-work.json'),JSON.stringify({items:[receipt('SAV-one',projects[0].id),receipt('SAV-two',projects[1].id)]}));
+ const original=SaveService.prototype.projectRecord;SaveService.prototype.projectRecord=function(row){return row;};
+ const server=await startAtlasUiServer({stateDir,registry,rules:{},intake:{stateDir}});
+ t.after(async()=>{SaveService.prototype.projectRecord=original;await server.close();registry.dispose();fs.rmSync(stateDir,{recursive:true,force:true});});
+ const page=await (await fetch(server.workspace_url+'projects')).text();
+ assert.match(page,/data-project-search="First first-new\.txt/u);assert.match(page,/data-project-search="Second example\.md/u);
+ assert.doesNotMatch(page,/data-project-search="Second first-new\.txt/u);
 });
 
 test('Save snapshots keep status filtering and per-Project error state', t=>{

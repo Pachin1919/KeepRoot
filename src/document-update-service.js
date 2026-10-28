@@ -990,14 +990,9 @@ export class DocumentUpdateService {
       progress.status = 'started'; batch.status = 'paused'; batch.revision++;
       this.#writeBatch(batch);
       this.operationHook('batch-started', { batch_id: batchId, update_id: frozen.update_id });
-      try {
-        this.#mutateLocked('execute', frozen.update_id, { projectId, expectedRevision: frozen.revision,
-          expectedCurrentSha256: frozen.current_sha256, expectedFileId: frozen.file_id,
-          requestKey: frozen.request_key, caller: frozen.caller });
-      } catch (error) {
-        // Preserve started intent on interruption. No implicit retry or recovery.
-        throw error;
-      }
+      this.#mutateLocked('execute', frozen.update_id, { projectId, expectedRevision: frozen.revision,
+        expectedCurrentSha256: frozen.current_sha256, expectedFileId: frozen.file_id,
+        requestKey: frozen.request_key, caller: frozen.caller });
       this.operationHook('batch-after-update', { batch_id: batchId, update_id: frozen.update_id });
       record = this.#readRecord(frozen.update_id);
       if (record.status !== 'applied' || !record.execution) throw conflict('Batch update did not reach its final applied state.');

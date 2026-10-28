@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+import { Registry } from '../src/registry.js';
+import { createResourceControl } from '../src/resource-control.js';
+import { createDataWorkService } from '../src/ui/services/data-work-service.js';
+
+test('Work listing reads sessions and sources in batches and each request sees current state', t => {
+  const root = fs.mkdtempSync(path.resolve('test/.tmp/work-read-'));
+  const registry = new Registry({ stateDir: path.join(root, 'state') });
+  const control = createResourceControl({ stateDir: registry.stateDir, ledger: registry.ledger });
+  t.after(() => { control.dispose(); registry.dispose(); fs.rmSync(root, { recursive: true, force: true }); });
+  const project = registry.create({ name: 'One', currentPath: 'One' });
+  const other = registry.create({ name: 'Two', currentPath: 'Two' });
+  const repository = registry.ledger.workSessions;
+  const at = '2026-10-27T00:00:00.000Z';
+  const resourceIds = ['first.csv', 'second.csv'].map(name => {
+    const filePath = path.join(root, name);
+    fs.writeFileSync(filePath, 'name\none\n');
+    return control.identify({ filePath, project: { id: project.project_id } }).resource_id;
+  });
+  const works = Array.from({ length: 4 }, (_, index) => repository.create({ projectId: project.project_id, resourceIds, intent: `Work ${index}`, at }));
+  repository.create({ projectId: other.project_id, at });
+  const service = createDataWorkService({ stateDir: registry.stateDir, projectRoot: root, installationRoot: root, resourceControl: control });
+  const db = registry.ledger.db, prepare = db.prepare.bind(db);
+  const queries = [];
+  db.prepare = (sql, ...args) => { if (/SELECT .*FROM work_(?:sessions|session_sources)/u.test(sql)) queries.push(sql); return prepare(sql, ...args); };
+  t.after(() => { db.prepare = prepare; });
+  const listed = service.openProjectSessions({ id: project.project_id });
+  assert.equal(listed.length, works.length);
+  assert.deepEqual(new Set(listed.map(work => work.session_id)), new Set(works.map(work => work.session_id)));
+  for (const work of listed) assert.deepEqual(work.sources.map(source => source.resource_id), resourceIds);
+  assert.equal(queries.length, 2, 'One session query and one source query must serve the whole list.');
+  queries.length = 0;
+  assert.equal(service.session(works[0].session_id).session_id, works[0].session_id);
+  assert.equal(queries.length, 2, 'A single Work read must not fetch the same session twice.');
+  db.prepare('UPDATE work_sessions SET intent=? WHERE id=?').run('Updated', works[0].session_id);
+  assert.equal(service.openProjectSessions({ id: project.project_id }).find(work => work.session_id === works[0].session_id).intent, 'Updated');
+  const page = repository.listForProject(project.project_id, { limit: 2, offset: 1 });
+  assert.equal(page.total, 4);
+  assert.deepEqual(page.sessions.map(work => work.session_id), listed.slice(1, 3).map(work => work.session_id));
+});

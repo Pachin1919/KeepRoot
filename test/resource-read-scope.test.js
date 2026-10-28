@@ -23,6 +23,43 @@ function observe(paths) {
  fs.readFileSync=function(file,...args){readingFile++;try{const value=readFile.call(this,file,...args);if(typeof file==='string'&&tracked.has(path.resolve(file)))reads.push({path:path.resolve(file),bytes:Buffer.byteLength(value)});return value;}finally{readingFile--;}};
  return {reads,restore(){fs.openSync=open;fs.readSync=read;fs.closeSync=close;fs.readFileSync=readFile;}};
 }
+
+test('Single Resource queries return only scoped rows and preserve Project membership', t => {
+ const f=fixture(t),db=f.registry.ledger.db,prepare=db.prepare.bind(db),sizes=[];
+ for(const fact of f.control.projectResources(f.projectId))f.registry.ledger.resources.upsertRelationship({sourceResourceId:fact.resource_id,targetKind:'project',targetId:f.projectId,type:'stored_in',submitter:{tool:'test'},evidence:{},at:'2026-10-27T00:00:00Z'});
+ const expected=f.control.projectResources(f.projectId).find(item=>item.resource_id===f.resourceId);
+ db.prepare=(sql,...rest)=>{
+  const statement=prepare(sql,...rest);
+  if(!sql.startsWith('SELECT l.*, r.id AS resource_id')&&!sql.startsWith('SELECT r.*, rr.id AS relationship_id'))return statement;
+  return {all(...args){const rows=statement.all(...args);sizes.push(rows.length);return rows;}};
+ };
+ try {
+  const current=f.control.projectResource(f.projectId,f.resourceId);
+  assert.equal(current.resource_id,expected.resource_id);assert.deepEqual(current.locations,expected.locations);assert.deepEqual(current.relationships,expected.relationships);
+  assert.deepEqual(sizes,[1,1],'one location and one stored_in relationship, without loading the other 16 Resources');
+  sizes.length=0;assert.throws(()=>f.control.projectResource('PRJ-foreign',f.resourceId),/unavailable/u);assert.deepEqual(sizes,[0,0]);
+ }finally{db.prepare=prepare;}
+});
+
+test('Missing archive state reads only the latest matching Project action', t => {
+ const f=fixture(t),repo=f.registry.ledger.resources,projectId=f.projectId,resourceId=f.resourceId;
+ repo.recordAction({id:'a',resourceId,type:'archive_missing',details:{project_id:projectId,batch_id:'batch'},at:'2026-10-27T00:00:00Z'});
+ repo.recordAction({id:'b',resourceId,type:'restore_missing',details:{project_id:projectId},at:'2026-10-27T00:00:00Z'});
+ repo.recordAction({id:'c',resourceId,type:'archive_missing',details:{project_id:'PRJ-foreign'},at:'2026-10-28T00:00:00Z'});
+ const list=repo.listActions;repo.listActions=()=>{throw Error('Archive state must not load full action history');};
+ try{const state=repo.missingArchiveState(resourceId,projectId);assert.equal(state.archived,false);assert.equal(state.action.id,'b');assert.equal(state.batch_id,null);assert.equal(repo.missingArchiveState(resourceId,'unrelated').action,null);}
+ finally{repo.listActions=list;}
+});
+test('Observing a new Resource reads its content once and retains its identity',t=>{
+ const f=fixture(t);const file=path.join(f.workspace,'研究','new.md');const content='new resource';fs.writeFileSync(file,content);
+ const measured=observe([file]);let first;
+ try {
+  first=f.control.observe({filePath:file,project:f.registry.show(f.projectId).project});
+  assert.equal(measured.reads.reduce((total,item)=>total+item.bytes,0),Buffer.byteLength(content));
+ } finally {measured.restore();}
+ assert.equal(first.external_change.status,'unchanged');
+ assert.equal(f.control.observe({filePath:file,project:f.registry.show(f.projectId).project}).resource_id,first.resource_id);
+});
 test('Single Resource refresh checks only that scoped Resource; explicit Project refresh still checks every file',t=>{
  const f=fixture(t);fs.appendFileSync(f.file,'\n来源后改。');const measured=observe([f.file,...f.unrelated]);
  try {

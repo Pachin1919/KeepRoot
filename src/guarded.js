@@ -225,7 +225,7 @@ export class Guarded {
     const { diffText, diffHash } = buildCompleteDiff([change]);
     const startedAt = timestamp();
     const runId = requestedRunId ?? makeRunId();
-    const ids = this.ledger.createGuardedRun({
+    const ids = this.ledger.guarded.create({
       runId,
       root,
       targetPath: normalizedTarget.relative,
@@ -250,7 +250,7 @@ export class Guarded {
   }
 
   preview(runId) {
-    const detail = this.ledger.getGuardedDetail(runId);
+    const detail = this.ledger.guarded.getDetail(runId);
     const reviewPath = ensureReviewCopy(this.stateDir, runId, detail.candidate);
     return {
       ...detail,
@@ -264,7 +264,7 @@ export class Guarded {
   }
 
   approve(runId, { reason = null } = {}) {
-    return this.ledger.reviewGuarded(runId, {
+    return this.ledger.guarded.review(runId, {
       decision: 'accepted',
       reason,
       reviewedAt: timestamp(),
@@ -272,7 +272,7 @@ export class Guarded {
   }
 
   reject(runId, { reason = null } = {}) {
-    return this.ledger.reviewGuarded(runId, {
+    return this.ledger.guarded.review(runId, {
       decision: 'rejected',
       reason,
       reviewedAt: timestamp(),
@@ -288,7 +288,7 @@ export class Guarded {
         throw new Error('Guarded apply-approved cannot re-execute a rolled-back run.');
       }
       if (detail.run.status === 'prepared') {
-        this.ledger.reviewGuarded(runId, {
+        this.ledger.guarded.review(runId, {
           decision: 'accepted',
           reason,
           reviewedAt: timestamp(),
@@ -314,7 +314,7 @@ export class Guarded {
       revisedFromRunId: runId,
       caller: original.run.caller,
     });
-    this.ledger.markGuardedRevised(runId, revised.run_id, reason, timestamp());
+    this.ledger.guarded.markRevised(runId, revised.run_id, reason, timestamp());
     return revised;
   }
 
@@ -336,7 +336,7 @@ export class Guarded {
     const targetPath = path.resolve(detail.run.root_path, ...detail.candidate.target_path.split('/'));
     const observedHash = currentHash(targetPath);
     if (observedHash !== detail.baseline.content_hash && observedHash !== detail.candidate.content_hash) {
-      this.ledger.markGuardedStale(runId, {
+      this.ledger.guarded.markStale(runId, {
         target_path: detail.candidate.target_path,
         expected_hash: detail.baseline.content_hash,
         observed_hash: observedHash,
@@ -350,7 +350,7 @@ export class Guarded {
       } catch (error) {
         const afterFailure = currentHash(targetPath);
         if (afterFailure !== detail.baseline.content_hash && afterFailure !== detail.candidate.content_hash) {
-          this.ledger.markGuardedStale(runId, {
+          this.ledger.guarded.markStale(runId, {
             target_path: detail.candidate.target_path,
             expected_hash: detail.baseline.content_hash,
             observed_hash: afterFailure,
@@ -376,7 +376,7 @@ export class Guarded {
       rollback_ready: true,
       executed_at: executedAt,
     };
-    return this.ledger.finishGuardedExecution(runId, { receipt, executedAt });
+    return this.ledger.guarded.finishExecution(runId, { receipt, executedAt });
   }
 
   rollback(runId) {
@@ -421,7 +421,7 @@ export class Guarded {
       target: detail.candidate.target_path,
       rolled_back_at: rolledBackAt,
     };
-    return this.ledger.finishGuardedRollback(runId, receipt, rolledBackAt);
+    return this.ledger.guarded.finishRollback(runId, receipt, rolledBackAt);
   }
 
   dispose() {

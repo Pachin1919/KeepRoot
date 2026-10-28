@@ -1233,7 +1233,7 @@ export class Evolution {
       const diffHash = crypto.createHash('sha256').update(diffText).digest('hex');
       const runId = makeRunId();
       const startedAt = timestamp();
-      const ids = this.ledger.createEvolutionRun({
+      const ids = this.ledger.evolution.create({
         runId,
         root,
         operation,
@@ -1266,8 +1266,8 @@ export class Evolution {
   }
 
   preview(runId) {
-    const detail = this.ledger.getEvolutionDetail(runId);
-    if (detail.operation.type === 'migrate_project' && !this.ledger.getEvolutionOperation(runId).baseline.project_move) {
+    const detail = this.ledger.evolution.getDetail(runId);
+    if (detail.operation.type === 'migrate_project' && !this.ledger.evolution.getOperation(runId).baseline.project_move) {
       return { ...detail, project_migration_compatibility: { guidance: PROJECT_MOVE_GUIDANCE, legacy_undo_supported: false } };
     }
     return detail;
@@ -1281,9 +1281,9 @@ export class Evolution {
       if (detail.plan.blockers?.length) {
         throw new Error(`Evolution plan has unresolved blockers: ${detail.plan.blockers.join(', ')}.`);
       }
-      const record = this.ledger.getEvolutionOperation(runId);
+      const record = this.ledger.evolution.getOperation(runId);
       if (record.baseline.save_directory) this.#verifySaveDirectoryContext(record.baseline.save_directory);
-      return this.ledger.reviewEvolution(runId, {
+      return this.ledger.evolution.review(runId, {
         decision: 'accepted', reason: reason.trim(), reviewedAt: timestamp(),
       });
     };
@@ -1292,13 +1292,13 @@ export class Evolution {
   }
 
   reject(runId, { reason = null } = {}) {
-    return this.ledger.reviewEvolution(runId, {
+    return this.ledger.evolution.review(runId, {
       decision: 'rejected', reason, reviewedAt: timestamp(),
     });
   }
 
   execute(runId) {
-    refuseProjectMigration(this.ledger.getEvolutionOperation(runId).operation_type);
+    refuseProjectMigration(this.ledger.evolution.getOperation(runId).operation_type);
     return withStateLock(this.stateDir, () => this.#execute(runId));
   }
 
@@ -1312,7 +1312,7 @@ export class Evolution {
     if (detail.approved_plan_hash !== detail.operation.plan_hash) {
       throw new Error('Evolution approval does not match the current ChangeSet.');
     }
-    const record = this.ledger.getEvolutionOperation(runId);
+    const record = this.ledger.evolution.getOperation(runId);
     const root = detail.run.root_path;
     const sourceRoot = record.baseline.source_root_path ?? root;
     const targetRoot = record.baseline.target_root_path ?? root;
@@ -1347,7 +1347,7 @@ export class Evolution {
     const directoryIdentityEvent = detail.events.find((event) => event.type === 'evolution_save_directory_identity') ?? null;
     if (saveDirectory) {
       if (started && !directoryIdentityEvent && fs.existsSync(targetPath)) {
-        this.ledger.markEvolutionStale(runId, {
+        this.ledger.evolution.markStale(runId, {
           reason: 'save_directory_created_without_identity_receipt',
           target_observed_hash: targetState.hash,
         }, timestamp());
@@ -1371,7 +1371,7 @@ export class Evolution {
       }
     }
     if (!beforeMatches && !(started && (afterMatches || crossRootCopyReady))) {
-      this.ledger.markEvolutionStale(runId, {
+      this.ledger.evolution.markStale(runId, {
         reason: targetState.kind !== 'absent' ? 'target_claimed_or_changed' : 'source_changed_after_prepare',
         source_observed_hash: sourceState?.hash ?? null,
         target_observed_hash: targetState.hash,
@@ -1379,7 +1379,7 @@ export class Evolution {
       throw stateConflict('Evolution source changed after prepare or target was claimed; approval is stale.');
     }
     if (beforeMatches || (started && crossRootCopyReady)) {
-      if (!started) this.ledger.startEvolutionExecution(runId, timestamp());
+      if (!started) this.ledger.evolution.startExecution(runId, timestamp());
       if (record.operation_type === 'create_directory') {
         fs.mkdirSync(targetPath);
         if (saveDirectory) {
@@ -1442,7 +1442,7 @@ export class Evolution {
       }
     }
     const executedAt = timestamp();
-    return this.ledger.finishEvolutionExecution(runId, {
+    return this.ledger.evolution.finishExecution(runId, {
       receipt: {
         run_id: runId,
         status: 'executed',
@@ -1469,7 +1469,7 @@ export class Evolution {
 
   rollback(runId) {
     // Unsupported legacy records must not acquire a rollback-error event.
-    refuseProjectMigration(this.ledger.getEvolutionOperation(runId).operation_type);
+    refuseProjectMigration(this.ledger.evolution.getOperation(runId).operation_type);
     return withStateLock(this.stateDir, () => {
       try {
         return this.#rollback(runId);
@@ -1481,13 +1481,13 @@ export class Evolution {
   }
 
   #rollback(runId) {
-    refuseProjectMigration(this.ledger.getEvolutionOperation(runId).operation_type);
+    refuseProjectMigration(this.ledger.evolution.getOperation(runId).operation_type);
     const detail = this.preview(runId);
     if (detail.rollback_receipt) return detail.rollback_receipt;
     if (detail.run.status !== 'executed') {
       throw new Error(`Only an executed Evolution run can be rolled back; current status is ${detail.run.status}.`);
     }
-    const record = this.ledger.getEvolutionOperation(runId);
+    const record = this.ledger.evolution.getOperation(runId);
     const root = detail.run.root_path;
     const sourceRoot = record.baseline.source_root_path ?? root;
     const targetRoot = record.baseline.target_root_path ?? root;
@@ -1616,7 +1616,7 @@ export class Evolution {
       }
     }
     const rolledBackAt = timestamp();
-    return this.ledger.finishEvolutionRollback(runId, {
+    return this.ledger.evolution.finishRollback(runId, {
       run_id: runId,
       status: 'rolled_back',
       operation: record.operation_type,

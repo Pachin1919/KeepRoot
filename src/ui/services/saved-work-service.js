@@ -3,14 +3,14 @@ import path from 'node:path';
 import { contentFileFingerprint } from '../../content-inspection.js';
 import { projectPath } from '../project-files.js';
 
-export function savedResultState(result) {
-  if (result.status === 'undone') return 'undone';
+export function savedResultOutput(result) {
+  if (result.status === 'undone') return { status: 'undone', sha256: null };
   try {
     const current = contentFileFingerprint(result.result_path);
     const expected = result.result_fingerprint?.sha256 ?? result.verification?.sha256;
-    return !expected ? 'unknown' : current.sha256 === expected ? 'verified' : 'changed';
+    return { status: !expected ? 'unknown' : current.sha256 === expected ? 'verified' : 'changed', sha256: current.sha256 };
   } catch (error) {
-    return error.code === 'ATLAS_CONTENT_INPUT_MISSING' ? 'missing_source' : 'unknown';
+    return { status: error.code === 'ATLAS_CONTENT_INPUT_MISSING' ? 'missing_source' : 'unknown', sha256: null };
   }
 }
 
@@ -20,8 +20,8 @@ export function sourceVersionPolicy(sources, fallback = 'follow_latest') {
   return pinned === sources.length ? 'pinned_version' : pinned > 0 ? 'mixed' : 'follow_latest';
 }
 
-export function savedResultFreshness(result) {
-  const outputStatus = savedResultState(result);
+export function savedResultFreshness(result, { output = savedResultOutput(result) } = {}) {
+  const outputStatus = output.status;
   const versionPolicy = result.version_policy ?? result.source?.version_policy ?? result.parameters?.version_policy ?? 'pinned_version';
   if (outputStatus === 'missing_source') return { status: 'missing', label: 'Result missing', version_policy: versionPolicy, output_status: outputStatus, reason: 'The saved output is not at its recorded location.' };
   if (outputStatus === 'changed') return { status: 'needs_review', label: 'Result changed', version_policy: versionPolicy, output_status: outputStatus, reason: 'The saved output was edited outside Atlas after verification.' };

@@ -137,7 +137,7 @@ function validRecord(value) {
     work_id: value.work_id,
     resource_id: typeof value.resource_id === 'string' ? value.resource_id : null,
     file_path: path.resolve(value.file_path),
-    last_action: value.last_action === 'inspect' ? 'inspect' : 'inspect',
+    last_action: 'inspect',
     inspect: {
       purpose: typeof value.inspect.purpose === 'string' ? value.inspect.purpose : 'content',
       sheet: typeof value.inspect.sheet === 'string' ? value.inspect.sheet : null,
@@ -268,23 +268,6 @@ export function touchRecentWork(stateDir, workId) {
     const index = records.findIndex((item) => item.work_id === workId);
     if (index < 0) return { records, value: null, write: false };
     const record = { ...records[index], last_continued_at: new Date().toISOString() };
-    records[index] = record;
-    return { records, value: record };
-  });
-}
-
-export function setRecentWorkProject(stateDir, workId, project) {
-  if (!/^RWK-[a-f0-9-]{36}$/u.test(workId ?? '')) return null;
-  if (project != null && (typeof project.id !== 'string' || typeof project.name !== 'string')) {
-    throw new Error('Recent Work Project must include an id and name.');
-  }
-  return mutateRecentWork(stateDir, (records) => {
-    const index = records.findIndex((item) => item.work_id === workId);
-    if (index < 0) return { records, value: null, write: false };
-    const record = {
-      ...records[index],
-      project: project ? { id: project.id, name: project.name } : null,
-    };
     records[index] = record;
     return { records, value: record };
   });

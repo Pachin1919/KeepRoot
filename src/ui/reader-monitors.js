@@ -120,7 +120,7 @@ export function initReaderMonitors(root, env = {}) {
   const onVisibility = () => { if (doc.hidden) { clearTimer(); generation++; controller?.abort(); } else schedule(); };
   const onEscape = event => {
     if (event.key !== 'Escape') return;
-    if (event.key === 'Escape' && narrow.matches && root.dataset.readerMonitorMode === 'monitors') {
+    if (narrow.matches && root.dataset.readerMonitorMode === 'monitors') {
       root.dataset.readerMonitorMode = 'document'; syncLayout(); modeButtons.find(button => button.dataset.readerMonitorMode === 'monitors')?.focus();
     } else syncLayout();
   };

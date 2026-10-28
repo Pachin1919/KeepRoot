@@ -85,8 +85,7 @@ export function createProjectImportService({ stateDir, registry, intake = null, 
     }
   }
 
-  function activeProject(projectId) {
-    const project = activeProjects().find((item) => item.id === projectId);
+  function activeProject(projectId, project = activeProjects().find((item) => item.id === projectId)) {
     if (!project) throw new Error('Choose an active Project.');
     const location = registry.show(project.id).location;
     if (!location?.root_path || location.relative_path == null) {
@@ -98,7 +97,7 @@ export function createProjectImportService({ stateDir, registry, intake = null, 
   function projectChoices({ projectId = null } = {}) {
     return activeProjects().filter(project => projectId === null || project.id === projectId).map((project) => {
       try {
-        const value = activeProject(project.id);
+        const value = activeProject(project.id, project);
         const folders = listProjectFolders(value.root);
         return { ...project, available: true, folders: folders.items, folders_truncated: folders.truncated };
       } catch {

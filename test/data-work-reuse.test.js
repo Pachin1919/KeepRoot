@@ -20,6 +20,20 @@ function fixture(t) {
   return { root, stateDir, registry, control, service, project, oldPaths, newPaths, oldResources, newResources };
 }
 
+test('Recipe alignment reuses one field index for shared names and source-specific join keys', t => {
+  const f=fixture(t),repo=f.registry.ledger.workSessions;
+  let work=f.service.createProjectSession(f.project,{},f.oldResources.slice(0,2).map(item=>item.resource_id));
+  for(const [index,source] of work.sources.entries())repo.updateSource(work.session_id,source.source_key,{fingerprint:contentFileFingerprint(f.oldPaths[index]),profile:{profile:{fields:[{name:'name'},{name:'value'}]}},processorVersion:'test',status:'ready'},new Date().toISOString());
+  work=f.service.confirmMapping(work.session_id,work.sources.flatMap((source,index)=>[{source_key:source.source_key,column:'name',canonical:'id'},{source_key:source.source_key,column:'value',canonical:index?'right_value':'left_value'}]),{baseRevision:work.revision});
+  const byId=repo.byId.bind(repo);repo.byId=(id)=>{const value=byId(id);if(value)value.mapping.find=()=>{throw Error('Recipe must not scan the mapping per field');};return value;};
+  try {
+    const updated=f.service.updateRecipe(work.session_id,{combine:'join',left_key:'id',right_key:'id',select_columns:['id','left_value','right_value']},{baseRevision:work.revision});
+    assert.deepEqual(updated.recipe.combine,{operation:'join',how:'inner',left_key:'id',right_key:'id'});
+    assert.throws(()=>f.service.updateRecipe(work.session_id,{combine:'join',left_key:'right_value',right_key:'id'},{baseRevision:updated.revision}),/corresponding Source/u);
+    assert.throws(()=>f.service.updateRecipe(work.session_id,{cast_column:'unknown'},{baseRevision:updated.revision}),/aligned field/u);
+  }finally{repo.byId=byId;}
+});
+
 function prepareSixSlotWork(f) {
   let work = f.service.createProjectSession(f.project, {}, [], { intent: 'R1 source assignment', caller: { actor: 'agent', tool: 'test', client_run_id: 'r1-source' } });
   for (const resource of f.oldResources) work = f.service.addSource(work.session_id, resource.resource_id, { baseRevision: work.revision });

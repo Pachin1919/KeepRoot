@@ -37,6 +37,19 @@ function fixture(t, hooks = {}) {
   return { base, stateDir, root, registry, source, target, resource, work, saved, board, control, save, boards, service, prepare, options };
 }
 
+test('membership preview reads Work sources in batches while preserving the selected graph', t => {
+  const f = fixture(t), db = f.registry.ledger.db;
+  for (let index = 0; index < 4; index++) f.registry.ledger.workSessions.create({ projectId: f.source.project_id, resourceIds: [f.resource.resource_id], at: new Date().toISOString() });
+  const prepare = db.prepare.bind(db); let scalarQueries = 0;
+  t.mock.method(db, 'prepare', (sql, ...args) => { if (/FROM work_session_sources WHERE session_id=\?/u.test(sql)) scalarQueries++; return prepare(sql, ...args); });
+  const preview = f.prepare();
+  assert.equal(preview.can_execute, true);
+  assert.equal(preview.summary.works, 5);
+  assert.equal(preview.summary.saves, 1);
+  assert.equal(preview.summary.boards, 1);
+  assert.equal(scalarQueries, 0);
+});
+
 for (const operation of ['split', 'merge']) test(`${operation} moves the closed graph, preserves IDs hashes receipts and inversely restores ownership`, (t) => {
   const f = fixture(t); const receipt = fs.readFileSync(path.join(f.stateDir, 'ui/saved-work.json')); const bytes = fs.readFileSync(path.join(f.root, 'A/part/source.csv'));
   const preview = f.prepare(operation); assert.equal(preview.can_execute, true); assert.equal(preview.summary.resources, 2); assert.equal(preview.summary.works, 1); assert.equal(preview.summary.boards, 1); assert.equal(preview.summary.saves, 1);

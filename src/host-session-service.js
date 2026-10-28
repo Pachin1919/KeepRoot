@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { boundedJson, createCodexAppServerClient, hostError, plainPath, validateHostConfig, validateHostResponse } from './codex-app-server.js';
+import { boundedJson, createCodexAppServerClient, hostError, plainPath, validateHostConfig } from './codex-app-server.js';
 
 const TERMINAL = new Set(['completed', 'interrupted', 'failed', 'cancelled', 'outcome_unknown']);
 const ACCESS_NOTICE = 'Read-only sandbox and Project cwd do not confine reads to selected files. Model turns use the configured process account and account authorization; Atlas cannot guarantee selected-file read confinement.';
@@ -262,14 +262,14 @@ export function createHostSessionService({ stateDir, handoffs, resolveProject, c
       loaded.set(session.session_id, session); touch(session); record(session, 'status', 'New Host session intent recorded.');
       const client = clientFactory({ config: configNow(), stateDir, cwd: current.root }); const flush = attach(session, client);
       await client.initialize();
-      const started = validateHostResponse('thread/start', await client.request('thread/start', { cwd: current.root, sandbox: 'read-only', approvalPolicy: 'on-request', approvalsReviewer: 'user', ephemeral: false }));
+      const started = await client.request('thread/start', { cwd: current.root, sandbox: 'read-only', approvalPolicy: 'on-request', approvalsReviewer: 'user', ephemeral: false });
       checkThread(started, current.root); session.thread_id = started.thread.id; record(session, 'status', 'New Atlas-owned Host thread recorded.');
       const reread = await currentHandoff(projectId, request);
       if (!samePath(reread.root, current.root)) throw hostError('Project root changed before starting the Host turn.', 'ATLAS_STATE_CONFLICT');
       requireSameScope(session);
       session.status = 'starting'; record(session, 'status', 'Host turn intent recorded; interrupted starts are never resent.');
       const prompt = `Atlas Handoff (current local facts, not file-read confinement):\n${JSON.stringify(current.handoff)}\n\nUser request:\n${request.prompt}`;
-      const turned = validateHostResponse('turn/start', await client.request('turn/start', { threadId: session.thread_id, clientUserMessageId: sha({ session_id: session.session_id, request_key: request.request_key }), input: [{ type: 'text', text: prompt, text_elements: [] }] }));
+      const turned = await client.request('turn/start', { threadId: session.thread_id, clientUserMessageId: sha({ session_id: session.session_id, request_key: request.request_key }), input: [{ type: 'text', text: prompt, text_elements: [] }] });
       session.turn_id = turned.turn.id; session.status = 'running'; record(session, 'status', 'Host turn recorded; assistant output is not an Atlas Save Result.'); flush();
       return view(session);
     } catch (error) { if (session) failure(session, error, session.thread_id ? 'outcome_unknown' : 'failed'); throw error; }
@@ -309,7 +309,7 @@ export function createHostSessionService({ stateDir, handoffs, resolveProject, c
       const client = clientFactory({ config: configNow(), stateDir, cwd: session.root }); const flush = attach(session, client);
       await client.initialize();
       requireSameScope(session);
-      const resumed = validateHostResponse('thread/resume', await client.request('thread/resume', { threadId: session.thread_id, cwd: session.root, sandbox: 'read-only', approvalPolicy: 'on-request', approvalsReviewer: 'user', excludeTurns: false }));
+      const resumed = await client.request('thread/resume', { threadId: session.thread_id, cwd: session.root, sandbox: 'read-only', approvalPolicy: 'on-request', approvalsReviewer: 'user', excludeTurns: false });
       checkThread(resumed, session.root, session.thread_id);
       const turn = resumed.thread.turns.find(turn => turn.id === session.turn_id);
       session.error = null;

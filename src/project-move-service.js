@@ -173,7 +173,7 @@ export function createProjectMoveService({ stateDir, registry = null, resourceCo
       warnings: ['References in file contents are not rewritten.'], conflicts: [], requests: [], pending: null };
     row.digest = hash({ move: moveId, manifest: row.manifest, database, target: row.target });
     const plan = { summary: row.summary, blockers: [], source_changes: [{ path: row.source.relative_path }, { path: row.target.relative_path }] };
-    ledger.createEvolutionRun({ runId: moveId, root, operation: 'migrate_project', sourcePath: row.source.relative_path, targetPath: targetRelativePath, projectId: input.projectId, intent: 'Move this entire Project inside its registered Root.', baseline: { project_move: true, source_manifest_hash: hash(row.manifest), source_entries: Object.entries(row.manifest), target_state: 'absent' }, plan, planHash: row.digest, diffText: `${row.source.relative_path} → ${targetRelativePath}`, diffHash: row.digest, caller: input.caller ?? {}, startedAt: now() });
+    ledger.evolution.create({ runId: moveId, root, operation: 'migrate_project', sourcePath: row.source.relative_path, targetPath: targetRelativePath, projectId: input.projectId, intent: 'Move this entire Project inside its registered Root.', baseline: { project_move: true, source_manifest_hash: hash(row.manifest), source_entries: Object.entries(row.manifest), target_state: 'absent' }, plan, planHash: row.digest, diffText: `${row.source.relative_path} → ${targetRelativePath}`, diffHash: row.digest, caller: input.caller ?? {}, startedAt: now() });
     write(row); return publicRow(row);
   });
   const transition = (id, options, action) => withStateLock(stateDir, () => {
@@ -211,7 +211,7 @@ export function createProjectMoveService({ stateDir, registry = null, resourceCo
     }
     const requestHash = key(action, options);
     row.requests.push({ action, key: options.requestKey, hash: requestHash, result: null });
-    if (action === 'execute') { ledger.reviewEvolution(id, { decision: 'accepted', reason: 'Confirmed exact Project Move preview.', reviewedAt: at }); ledger.startEvolutionExecution(id, at); }
+    if (action === 'execute') { ledger.evolution.review(id, { decision: 'accepted', reason: 'Confirmed exact Project Move preview.', reviewedAt: at }); ledger.evolution.startExecution(id, at); }
     row.pending = { action, from, to, before, after, at, request_hash: requestHash, ...(action==='undo'?{accepted_reference_roundtrips:accepted}:{}) }; row.status = 'needs_recovery'; write(row);
     writer({ mode: 'move', root: row.root_path, source: from.path, target: to.path, expectedManifest: row.manifest, expectedAncestors: row.ancestors });
     afterPhysicalMove?.(publicRow(row)); projectDatabase(row); afterDatabaseMove?.(publicRow(row)); return finish(row);

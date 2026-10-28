@@ -6,7 +6,7 @@ import { contentFileFingerprint, runDataWork } from './content-inspection.js';
 import { Registry } from './registry.js';
 import { createResourceControl } from './resource-control.js';
 import { SaveService } from './save-service.js';
-import { createSavedWorkService, savedResultFreshness } from './ui/services/saved-work-service.js';
+import { createSavedWorkService, savedResultFreshness, savedResultOutput } from './ui/services/saved-work-service.js';
 import { buildResourceImpactLanes } from './ui/services/resource-impact-service.js';
 import { renderMarkdown } from './markdown-reader.js';
 
@@ -234,9 +234,7 @@ export class BoardService {
   }
 
   #materialSnapshot(projectId, resourceId) {
-    let fact;
-    try { fact = this.resourceControl.projectResource(projectId, resourceId, { refresh: true }); }
-    catch (error) { throw new Error(`Resource boundary check failed: ${error.message}`); }
+    const fact = this.resourceControl.projectResource(projectId, resourceId, { refresh: true });
     const current = fact.external_change?.current;
     return {
       resource_id: resourceId,
@@ -324,21 +322,17 @@ export class BoardService {
   #projectResultBlock(projectId, block) {
     const result = this.savedWork.find(block.save_id);
     if (!result || result.project?.id !== projectId) return { ...block, name: block.save_id, path: block.recorded_path, status: 'missing', status_label: 'Missing', reason: 'The referenced Result is unavailable in this Project.', result_href: null };
-    const freshness = savedResultFreshness(result, { versionPolicy: block.version_policy });
+    const output = savedResultOutput(result);
+    const freshness = savedResultFreshness(result, { output });
     const isTableWorkAnalysis = this.#tableWorkAnalysisStep(result) != null;
     const inputsCurrent = !isTableWorkAnalysis || this.#tableWorkInputsCurrent(projectId, result);
     const status = !inputsCurrent ? 'needs_review' : freshness.status === 'pinned' ? 'fresh' : freshness.status === 'undone' || freshness.status === 'not_checked' ? 'needs_review' : freshness.status;
     const workId = result.parameters?.work_session_id ?? null;
     return { ...block, name: path.basename(result.result_path ?? block.recorded_path ?? block.save_id), path: result.result_path ?? block.recorded_path,
-      current_sha256: (() => { try { return contentFileFingerprint(result.result_path).sha256; } catch { return null; } })(),
+      current_sha256: output.sha256,
       updated_at: result.executed_at ?? result.created_at ?? null, resource_id: result.resource_id ?? null,
       status, status_label: statusLabel(status), reason: !inputsCurrent ? 'A source used by this saved Table Work Result changed; review the Source before using its analysis.' : freshness.reason,
       work_id: workId, result_href: workId ? `/work/${encodeURIComponent(workId)}/saved?work_id=${encodeURIComponent(block.save_id)}` : result.resources_href ?? null };
-  }
-
-  #tableWorkGroupStep(result) {
-    const analysis = this.#tableWorkAnalysisStep(result);
-    return analysis?.step.operation === 'group-aggregate' ? analysis : null;
   }
 
   #tableWorkAnalysisStep(result) {

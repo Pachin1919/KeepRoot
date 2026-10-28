@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import re
@@ -15,10 +14,10 @@ from xml.sax.saxutils import escape as xml_escape
 import pandas as pd
 
 from .common import validate_office_package, xml_root, zip_entry_names
-from .delimited import choose_header, indexed_rows, read_delimited_file, unique_headers
+from .delimited import choose_header, column_label, indexed_rows, read_delimited_file, unique_headers
 from .inspector import (
-    OFFICE_MAIN, OFFICE_REL, PACKAGE_REL, infer_column,
-    normalize_xlsx_target, shared_strings,
+    OFFICE_MAIN, OFFICE_REL, PACKAGE_REL, column_index, infer_column,
+    normalize_xlsx_target, sha256_file, shared_strings,
 )
 
 PROCESSOR_VERSION = "1.2.0"
@@ -27,21 +26,13 @@ MAX_ROWS = 200_000
 MAX_COLUMNS = 200
 
 
-def _sha256(file_path: Path) -> str:
-    digest = hashlib.sha256()
-    with file_path.open("rb") as stream:
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _source(file_value: str, expected_sha256: str) -> Path:
     source = Path(file_value).resolve()
     if not source.exists() or not source.is_file():
         raise ValueError("Data Work needs one existing local CSV or XLSX file")
     if source.stat().st_size > MAX_FILE_BYTES:
         raise ValueError("This file is larger than Atlas Data Work can process locally")
-    if _sha256(source) != expected_sha256:
+    if sha256_file(source) != expected_sha256:
         raise ValueError("Source changed before Atlas could read it")
     if source.suffix.lower() not in {".csv", ".xlsx"}:
         raise ValueError("Data Work currently supports CSV and XLSX files")
@@ -116,16 +107,6 @@ def _xlsx_sheet_rows(source: Path, selected_sheet: str) -> tuple[list[str], list
         return headers, records, {"sheet": selected_sheet, "header_row": header_row, "available_sheets": names_by_sheet}
 
 
-def _column_index(reference: str) -> int:
-    match = re.match(r"([A-Z]+)", reference.upper())
-    if not match:
-        return 0
-    value = 0
-    for character in match.group(1):
-        value = value * 26 + ord(character) - ord("A") + 1
-    return value - 1
-
-
 def _cell_value(cell: ET.Element, strings: list[str]) -> str | None:
     cell_type = cell.attrib.get("t")
     if cell_type == "inlineStr":
@@ -143,7 +124,7 @@ def _full_worksheet_rows(root: ET.Element, strings: list[str]) -> list[tuple[int
     for fallback, row in enumerate(root.findall(f".//{{{OFFICE_MAIN}}}row"), 1):
         values = {}
         for index, cell in enumerate(row.findall(f"{{{OFFICE_MAIN}}}c")):
-            column = _column_index(cell.attrib.get("r", "")) if cell.attrib.get("r") else index
+            column = column_index(cell.attrib.get("r", "")) if cell.attrib.get("r") else index
             if column < MAX_COLUMNS:
                 value = _cell_value(cell, strings)
                 if value not in (None, ""):
@@ -665,7 +646,7 @@ def _multi_work(request: dict[str, Any], action: str, output_path: str | None) -
             raise ValueError(f"Unsupported Recipe operation: {operation}")
 
     for item in sources:
-        if _sha256(Path(item["path"]).resolve()) != item["sha256"]:
+        if sha256_file(Path(item["path"]).resolve()) != item["sha256"]:
             raise ValueError(f"Source changed while Atlas was executing this Recipe: {item.get('name') or item['source_key']}")
     null_cells = int(result.isna().sum().sum())
     duplicate_rows = int(result.fillna("").astype(str).duplicated().sum()) if len(result) else 0
@@ -706,23 +687,15 @@ def _multi_work(request: dict[str, Any], action: str, output_path: str | None) -
             result.to_csv(output, index=False, encoding="utf-8-sig")
         else:
             raise ValueError("Work results can be staged only as CSV or XLSX")
-        response["staged"] = {"path": str(output), "sha256": _sha256(output), "bytes": output.stat().st_size}
+        response["staged"] = {"path": str(output), "sha256": sha256_file(output), "bytes": output.stat().st_size}
     return response
-
-
-def _xlsx_column(index: int) -> str:
-    value, result = index + 1, ""
-    while value:
-        value, remainder = divmod(value - 1, 26)
-        result = chr(65 + remainder) + result
-    return result
 
 
 def _write_xlsx(frame: pd.DataFrame, output: Path, sheet: str) -> None:
     rows = [list(frame.columns)] + frame.where(pd.notna(frame), "").values.tolist()
     xml_rows = []
     for row_number, row in enumerate(rows, 1):
-        cells = "".join(f'<c r="{_xlsx_column(index)}{row_number}" t="inlineStr"><is><t>{xml_escape(str(value))}</t></is></c>' for index, value in enumerate(row))
+        cells = "".join(f'<c r="{column_label(index)}{row_number}" t="inlineStr"><is><t>{xml_escape(str(value))}</t></is></c>' for index, value in enumerate(row))
         xml_rows.append(f'<row r="{row_number}">{cells}</row>')
     worksheet = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="{OFFICE_MAIN}"><sheetData>{"".join(xml_rows)}</sheetData></worksheet>'
     content_types = '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'
@@ -751,7 +724,7 @@ def data_work(file_value: str, *, expected_sha256: str, action: str, sheet: str 
     frame, detail = _load(source, sheet)
     operations = request.get("operations") or {"columns": list(frame.columns)}
     result = _apply(frame, operations)
-    if _sha256(source) != expected_sha256:
+    if sha256_file(source) != expected_sha256:
         raise ValueError("Source changed while Atlas was preparing this result")
     response = {"processor": {"version": PROCESSOR_VERSION}, "source": {"sha256": expected_sha256}, "sheet": sheet, "source_summary": {"rows": len(frame), "columns": len(frame.columns)}, "result_summary": {"rows": len(result), "columns": len(result.columns)}, "columns": [str(name) for name in result.columns], "column_types": _types(frame), "rows": _sample(result, int(request.get("page", 0)), int(request.get("page_size", 50))), "detail": detail}
     if action == "export":
@@ -759,5 +732,5 @@ def data_work(file_value: str, *, expected_sha256: str, action: str, sheet: str 
         output = Path(output_path).resolve(); output.parent.mkdir(parents=True, exist_ok=True)
         if source.suffix.lower() == ".csv": result.to_csv(output, index=False, encoding="utf-8-sig")
         else: _write_xlsx(result, output, sheet or "Data")
-        response["staged"] = {"path": str(output), "sha256": _sha256(output), "bytes": output.stat().st_size}
+        response["staged"] = {"path": str(output), "sha256": sha256_file(output), "bytes": output.stat().st_size}
     return response

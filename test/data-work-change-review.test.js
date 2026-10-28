@@ -36,3 +36,16 @@ test('R2 mixed reconcile marks only the structural mismatch and preserves unaffe
 test('R2 reconcileSources pin-recorded batches changed Sources in one revision as contained', async (t) => {
   const f = fixture(t); const before = workFixture(f); fs.appendFileSync(f.paths[0], 'new,9\n'); fs.appendFileSync(f.paths[1], 'newer,8\n'); const checked = await f.service.validateSources(before.session_id); const pinned = await f.service.reconcileSources(before.session_id, checked.sources.slice(0, 2).map((source) => source.source_key), 'pin-recorded', { baseRevision: checked.revision }); assert.equal(pinned.revision, checked.revision + 1); assert.equal(pinned.sources.slice(0, 2).every((source) => source.version_policy === 'pinned_version'), true); assert.match(pinned.freshness.label, /contained|pinned/iu); assert.equal(pinned.latest_save_id, before.latest_save_id); const reviewed = await f.service.validateSources(before.session_id); assert.equal(reviewed.change_review.status, 'fresh'); assert.equal(reviewed.change_review.counts.total, 0); assert.deepEqual(reviewed.change_review.items, []);
 });
+
+test('Work can follow a pinned Source again and stop using another Source without changing its peers', async (t) => {
+  const f = fixture(t); const before = workFixture(f); const [first, second, third] = before.sources;
+  const pinned = await f.service.reconcileSources(before.session_id, [first.source_key], 'pin-recorded', { baseRevision: before.revision });
+  await assert.rejects(f.service.reconcileSources(before.session_id, [first.source_key], 'follow-latest', { baseRevision: before.revision }), error => error.code === 'ATLAS_STATE_CONFLICT');
+  const followed = await f.service.reconcileSources(before.session_id, [first.source_key], 'follow-latest', { baseRevision: pinned.revision });
+  assert.equal(followed.sources[0].version_policy, 'follow_latest'); assert.equal(followed.revision, pinned.revision + 1);
+  const reduced = await f.service.reconcileSources(before.session_id, [second.source_key], 'stop-using', { baseRevision: followed.revision });
+  assert.deepEqual(reduced.sources.map(source => source.source_key), [first.source_key, third.source_key]);
+  assert.ok(reduced.mapping.every(entry => entry.source_key !== second.source_key));
+  assert.deepEqual(reduced.mapping.filter(entry => entry.source_key === third.source_key), before.mapping.filter(entry => entry.source_key === third.source_key));
+  assert.equal(reduced.latest_save_id, before.latest_save_id); assert.equal(reduced.revision, followed.revision + 1);
+});

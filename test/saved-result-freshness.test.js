@@ -3,7 +3,31 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { contentFileFingerprint } from '../src/content-inspection.js';
-import { savedResultFreshness } from '../src/ui/services/saved-work-service.js';
+import { createSavedWorkService, savedResultFreshness } from '../src/ui/services/saved-work-service.js';
+import { Registry } from '../src/registry.js';
+import { createResourceControl } from '../src/resource-control.js';
+import { createSaveService } from '../src/save-service.js';
+
+test('Saved Work returns the full receipt and preserves identity and bytes through read, Undo and Redo', t => {
+  const root=fs.mkdtempSync(path.resolve('test/.tmp/saved-work-return-')),stateDir=path.join(root,'state'),workspace=path.join(root,'workspace'),projectRoot=path.join(workspace,'A');
+  fs.mkdirSync(path.join(projectRoot,'Results'),{recursive:true});
+  const sourcePath=path.join(projectRoot,'source.csv'),stagedPath=path.join(root,'candidate.csv');
+  fs.writeFileSync(sourcePath,'value\n1\n');fs.writeFileSync(stagedPath,'sum\n1\n');
+  const registry=new Registry({stateDir}),adopted=registry.adoptRoot({rootPath:workspace,rootType:'project_workspace',contentPolicy:'bounded_content'}),created=registry.create({name:'A',currentPath:'A'});
+  registry.attachRoot(created.project_id,{rootId:adopted.root_id,relativePath:'A',reason:'Saved Work return regression'});
+  const project={id:created.project_id,name:'A'},control=createResourceControl({stateDir,ledger:registry.ledger}),resource=control.identify({filePath:sourcePath,project}),save=createSaveService({stateDir,resourceControl:control});
+  t.after(()=>{save.dispose();control.dispose();registry.dispose();fs.rmSync(root,{recursive:true,force:true});});
+  const service=createSavedWorkService({stateDir,saveService:save}),sourceFingerprint=contentFileFingerprint(sourcePath);
+  const request={project,root:workspace,projectRoot,folder:'Results',fileName:'summary.csv',stagedPath,sourcePath,sourceFingerprint,sourceResourceId:resource.resource_id,requestKey:'return-chain',caller:{tool:'test',client_run_id:'return-chain'},parameters:{fixture:true},resultSummary:{rows:1,columns:1}};
+  const saved=service.save(request);
+  assert.equal(saved.status,'executed');assert.equal(saved.result_fingerprint.bytes,fs.statSync(stagedPath).size);assert.ok(saved.candidate.sha256);
+  assert.equal(saved.sources[0].resource_id,resource.resource_id);assert.deepEqual(service.find(saved.save_id),{...saved,origin_project:saved.project,project:{...saved.project,current_path:'A',path:projectRoot}});
+  assert.equal(contentFileFingerprint(saved.result_path).sha256,saved.verification.sha256);
+  service.undo(saved.save_id);assert.equal(fs.existsSync(saved.result_path),false);assert.equal(service.find(saved.save_id).status,'undone');
+  service.redo(saved.save_id);const redone=service.find(saved.save_id);
+  assert.equal(redone.resource_id,saved.resource_id);assert.deepEqual(redone.source,saved.source);assert.equal(contentFileFingerprint(redone.result_path).sha256,saved.verification.sha256);
+  fs.appendFileSync(sourcePath,'2\n');assert.throws(()=>service.save({...request,fileName:'stale.csv',requestKey:'stale'}),/Source changed before Save/u);assert.equal(fs.existsSync(path.join(projectRoot,'Results','stale.csv')),false);
+});
 
 test('saved result checks its own recorded sources after the Work accepts newer versions', t => {
   const root = fs.mkdtempSync(path.resolve('test/.tmp/result-freshness-'));
