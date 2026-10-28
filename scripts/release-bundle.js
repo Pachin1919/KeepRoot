@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 const folders=['assets','bin','src','schemas','python/src','.agents/skills/keeproot','fixtures/product-demo'];
 const files=['package.json','python/pyproject.toml','install-atlas.ps1','start-preview.ps1','Install-Keeproot.cmd','Update-Keeproot.cmd','README.md',
  'scripts/runtime-manager.js','scripts/update-ui-shortcut.ps1','scripts/setup-keeproot.ps1','scripts/install-desktop-component.js','scripts/release-bundle.js','scripts/demo.js',
- 'docs/Atlas V1 产品说明书.md','docs/Atlas V1 使用说明书.md','docs/Atlas V1 验收指南.md','fixtures/local-module/uppercase-prefix.json'];
+ 'docs/product.md','docs/usage.md','docs/try-it.md','fixtures/local-module/uppercase-prefix.json'];
 const digest=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const allowed=relative=>files.includes(relative)||folders.some(folder=>relative.startsWith(folder+'/'));
 function plainPath(root,relative){

@@ -5,6 +5,8 @@ import subprocess
 import sys
 
 PUBLIC_DOCS = {
+    'docs/product.md', 'docs/usage.md', 'docs/try-it.md', 'docs/architecture.md',
+    # Previously published paths remain allowed when inspecting Git history.
     'docs/README.md', 'docs/Atlas V1 产品说明书.md',
     'docs/Atlas V1 使用说明书.md', 'docs/Atlas V1 验收指南.md',
     'docs/Atlas 技术作品与企业评审说明.md',

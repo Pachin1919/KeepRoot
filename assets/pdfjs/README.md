@@ -9,7 +9,7 @@ The core library and worker use Apache-2.0; see `LICENSE` and their retained
 file headers. CMaps, standard fonts, image decoders and the ICC profile have
 their own notices alongside the respective files. Preserve those notices.
 
-Atlas uses the rendering library, not the upstream viewer, editor or scripting
+Keeproot uses the rendering library, not the upstream viewer, editor or scripting
 sandbox. The upstream example is `examples/learning/helloworld.html`; loading,
 invalid-file and password failure tests are in `test/unit/api_spec.js`.
 
@@ -20,4 +20,4 @@ retain `standard_fonts/LICENSE_FOXIT`.
 
 These static files ship with the existing portable Runtime. No npm installation,
 external CDN, native executable or browser extension is required. Keep the core
-and worker versions together when updating and rerun Atlas PDF reading checks.
+and worker versions together when updating and rerun Keeproot PDF reading checks.

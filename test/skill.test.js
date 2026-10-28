@@ -66,9 +66,9 @@ test('repository Agent Skill is a complete user-installable source and reference
   assert.match(skill.match(/^description: (.+)$/mu)[1].slice(0, 120), /Keeproot.*CLI/);
   assert.match(skill, /not a tool named `keeproot`/u);
   assert.match(fs.readFileSync(path.join(projectRoot, '.agents/skills/atlas-file-governance/SKILL.md'), 'utf8'), /\.\.\/keeproot\/SKILL\.md/u);
-  assert.match(skill, /installed Atlas Runtime/u);
-  assert.match(skill, /Do not use for Atlas source development/u);
-  assert.doesNotMatch(skill, /Trigger for Atlas/u);
+  assert.match(skill, /installed Runtime through the `atlas` CLI/u);
+  assert.match(skill, /Do not use for Keeproot source development/u);
+  assert.doesNotMatch(skill, /Keeproot \(Atlas\)|installed Atlas|for Atlas source/u);
   assert.match(skill, /runtime_required/);
   assert.match(skill, /install-atlas\.ps1 install/);
   assert.match(skill, /15-second timeout/);

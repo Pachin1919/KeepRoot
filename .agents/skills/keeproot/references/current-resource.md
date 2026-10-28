@@ -16,4 +16,4 @@ For XLSX data inspection, also pass `--sheet '<EXACT_SHEET>'`. Use returned dete
 & $atlasCli content compare --left '<EXACT_PATH>' --right '<EXACT_PATH>' --json
 ```
 
-Inspection does not authorize saving, moving, overwriting, or deleting either file. If the current Runtime reports an unsupported format or boundary, stop and report that result; do not fall back to a legacy Task workflow.
+Inspection does not authorize saving, moving, overwriting, or deleting either file. If the current Runtime reports an unsupported format or boundary, stop and report that result.

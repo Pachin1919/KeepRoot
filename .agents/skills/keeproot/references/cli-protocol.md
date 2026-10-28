@@ -1,4 +1,4 @@
-# Atlas CLI Protocol
+# Keeproot CLI Protocol
 
 Use this reference only for an unfamiliar JSON response or Runtime error.
 
@@ -13,7 +13,7 @@ Run the installed launcher returned by `scripts/locate-atlas.ps1`. Add `--json`,
 - `content`: deterministic inspection or comparison of exact authorized files, plus prepare-only localization of a Host-selected local conversation selection.
 - `view`: Saved Resource View listing/evaluation, Host view save/update, property-definition reads, bounded Host property-candidate submission, and candidate-batch state reads for user review.
 - `resource show`: read one Resource by identity within an explicit Project.
-- `resource relationships submit`: persist Host-proposed relationships after Atlas validates identities and Project boundaries.
+- `resource relationships submit`: persist Host-proposed relationships after Keeproot validates identities and Project boundaries.
 
 `capabilities --json` is authoritative. A missing namespace is unsupported; do not reconstruct it through an internal service.
 
@@ -25,18 +25,18 @@ All writes use `round <action> --request-file <json> --json`. Keys are camelCase
 
 - `protect`: `{projectId, paths: ["proposal.md", "new-result.csv"], resourceIds?: ["RES-..."], workIds?: ["DWT-..."], boardIds: [], label, requestKey, caller}`. `resourceIds` is optional with at most 64 active Resources from this Project; each must have one active location and its active file must also appear in exact Project-relative `paths`. `workIds` is optional with at most 20 open Work Sessions from this Project; every Work Source must be a Resource in `resourceIds`. Call BEFORE the first edit; retain `round_id` and `head_node_id`. A failed call grants no protection. Paths are exact Project-relative files, not directory scans.
 - `round show <round_id> --project <project_id> --json`: read current facts, including `resource_ids` and `work_ids`. Before each subsequent write, use its `revision` as `baseRevision` and `current_digest` as `expectedDigest`; never reuse the pre-edit digest after editing.
-- `checkpoint`: `{projectId, roundId, baseRevision, expectedDigest, label, requestKey, caller}`. Atlas captures the declared state; Host supplies the meaningful stage title.
+- `checkpoint`: `{projectId, roundId, baseRevision, expectedDigest, label, requestKey, caller}`. Keeproot captures the declared state; Host supplies the meaningful stage title.
 - `extend`: the checkpoint fields plus additive `paths`, `resourceIds`, `workIds`, `saveIds`, `saveTargets`, or `boardIds`. Call before modifying newly admitted objects. Earlier nodes remain unchanged; recovery to an earlier node uses each added object's admission baseline, not a fabricated earlier state.
 - `restore`: `{projectId, roundId, nodeId, baseRevision, expectedDigest, requestKey, caller}`. First retains actual current disk contents in an insurance node, including edits not checkpointed, then restores the selected node. Retain `restore_id` and `return_node_id`.
 - `return`: same fields as restore, with `restoreId` instead of `nodeId`. Restores THAT operation's insurance point, not an ambiguous latest node, and also protects the state being left.
 - `resume`: `{projectId, roundId, restoreId, caller}`. For a persisted incomplete recovery, rechecks the saved journal and resumes. A conflict must stop; there is no force flag.
 - `round list --project <project_id> --json`: lists persisted rounds and incomplete recovery indicators.
 
-Stop other writers and have the user save/close relevant editors before switching state. File hashes, Resource facts, and Work/Board revisions are checked, but Atlas cannot lock external applications. Work and Board revisions advance on restoration; Work Preview is cleared. Resources retain identity, restore the accepted baseline, and append an audit action; they do not have a Work-style revision counter. Old Host assumptions are invalid. `pending_restore` is null only after completion. Pending recovery blocks Work/Resource mutations and related Save entry points. New branches keep prior nodes; history is not automatically deleted. Limits: 64 files, Resources and Saves, 20 Works, 32 MiB per file, 128 MiB total, 10 Boards, 200 nodes per round. Project Home links to the shared round timeline. UI recovery requires a current preview before confirmation; stale previews cannot write.
+Stop other writers and have the user save/close relevant editors before switching state. File hashes, Resource facts, and Work/Board revisions are checked, but Keeproot cannot lock external applications. Work and Board revisions advance on restoration; Work Preview is cleared. Resources retain identity, restore the accepted baseline, and append an audit action; they do not have a Work-style revision counter. Old Host assumptions are invalid. `pending_restore` is null only after completion. Pending recovery blocks Work/Resource mutations and related Save entry points. New branches keep prior nodes; history is not automatically deleted. Limits: 64 files, Resources and Saves, 20 Works, 32 MiB per file, 128 MiB total, 10 Boards, 200 nodes per round. Project Home links to the shared round timeline. UI recovery requires a current preview before confirmation; stale previews cannot write.
 
 For an existing executed Save, add `saveIds` to protect/extend and declare its output Resource, output path, all input paths/Source Resources, associated Work and every consumer Board. Result Preview Boards can then recover with the selected files and Work configuration/latest Save pointer. Original Save receipts stay byte-for-byte unchanged; current `save show` verification checks the present file, not just historical success.
 
-For a Save to be created during this round, protect its exact absent output path in both `paths` and `saveTargets` BEFORE preparing the Save. Its parent must already exist. After the Save fully executes, Atlas admits its recorded Resource and Save identities from the existing receipt. Restoring before creation removes the output under insurance, marks that same Resource missing and restores the previous Work pointer/Board blocks. Returning reactivates that identity and content. Do not prepare a second Save for the same slot; prepared/failed/undone Saves and competing claims block recovery.
+For a Save to be created during this round, protect its exact absent output path in both `paths` and `saveTargets` BEFORE preparing the Save. Its parent must already exist. After the Save fully executes, Keeproot admits its recorded Resource and Save identities from the existing receipt. Restoring before creation removes the output under insurance, marks that same Resource missing and restores the previous Work pointer/Board blocks. Returning reactivates that identity and content. Do not prepare a second Save for the same slot; prepared/failed/undone Saves and competing claims block recovery.
 
 This experimental route still refuses cross-Project or undeclared dependencies, moved/multi-location Resources, missing pre-existing Resources, closed/missing Work, and Save Undo/Redo status transitions. It does not restore new Work/Board creation, arbitrary directories, editor buffers or Host conversations. A created output missing because of its protected recovery is the explicit Resource-status exception. Never bypass refusal with shell replacement.
 
@@ -67,9 +67,9 @@ Host flow: submit and preserve the returned `batch_id`; let the user use Desktop
 
 After selecting an explicit `session_id` from the list, call `table-work show <session_id>` before any update and use its current revision. Do not infer a Work goal or caller metadata from these summaries.
 
-`table-work start` accepts optional `--intent <text>` for a new Work. Atlas stores that goal with caller metadata for the new Work; legacy Work records have null values.
+`table-work start` accepts optional `--intent <text>` for a new Work. Keeproot stores that goal with caller metadata for the new Work; Work records may have no stored goal or caller.
 
-`table-work reuse <session_id> --base-revision <current_revision> --request-file <assignments.json> --tool <tool> --client-run-id <id> [--intent <text>] --json` creates a distinct Work for the current materials. The request contains one `{source_key,source,sheet}` assignment for every recorded slot; R1 requires the same Source count and one-to-one assignments. Compatible Sheet, fields, and known types rebind only that slot's mapping basis during Prepare. The new Work starts at revision `1` with the recorded mapping meaning and Recipe; Preview and latest Save are not copied. The earlier Work and Result are not modified. Stop on a stale revision or an incomplete/duplicate assignment.
+`table-work reuse <session_id> --base-revision <current_revision> --request-file <assignments.json> --tool <tool> --client-run-id <id> [--intent <text>] --json` creates a distinct Work for the current materials. The request contains one `{source_key,source,sheet}` assignment for every recorded slot; Reuse requires the same Source count and one-to-one assignments. Compatible Sheet, fields, and known types rebind only that slot's mapping basis during Prepare. The new Work starts at revision `1` with the recorded mapping meaning and Recipe; Preview and latest Save are not copied. The earlier Work and Result are not modified. Stop on a stale revision or an incomplete/duplicate assignment.
 
 `table-work show` and `prepare` detect changed, moved, and missing Sources but do not adopt a changed version. `show` returns one bounded `change_review` with affected Work/Result identity and, for newly prepared profiles, up to five representative rows; an older profile without samples explicitly reports that its Hash proves identity and is not a backup. Reconcile one Source with `table-work reconcile`, or apply one decision atomically to selected Sources with `table-work reconcile-batch <session_id> --request-file <source-keys.json> --decision <use-current|pin-recorded|follow-latest|stop-using> --base-revision <current_revision> --tool <tool> --client-run-id <id> --json`. The batch request is `{"source_keys":["SRC-...","SRC-..."]}` and increments the Work revision once. Compatible `use-current` rebinds only selected mapping bases; a structural mismatch clears only its own mapping entries and becomes `mapping_required`. `pin-recorded` retains recorded facts, Recipe, mapping, and earlier Results; it does not claim unavailable bytes are backed up. Missing stays on Resource Context relink. Result output integrity remains separate from Source policy and freshness.
 
@@ -85,9 +85,9 @@ Use `board list --project <project_id>`, `board create --project <project_id> --
 
 The command does not write the final target. The prepared text uses the internal heading `Selected decisions`; inspect it on the returned Save page, which shows a bounded plain-text preview and recovery state. Save only through `save execute <save_id> --reason <current_authorization>` or Desktop **Save and verify**. Use unified `save show`, `save undo`, and `save redo`; Resources and Activity show the resulting record.
 
-The local selection is source evidence chosen by the Host, not an original remote chat capture or verified business truth. Atlas records external selection facts without creating Project Material lineage. This route does not create a custom module registry.
+The local selection is source evidence chosen by the Host, not an original remote chat capture or verified business truth. Keeproot records external selection facts without creating Project Material lineage. This route does not create a custom module registry.
 
-Do not treat `partial` or `unknown` as a full set, or as evidence that no Resource changed. A continuation remains bound to its evaluation facts and configuration. If Atlas returns `ATLAS_EVALUATION_CHANGED`, restart evaluation from the first page instead of continuing with mixed facts.
+Do not treat `partial` or `unknown` as a full set, or as evidence that no Resource changed. A continuation remains bound to its evaluation facts and configuration. If Keeproot returns `ATLAS_EVALUATION_CHANGED`, restart evaluation from the first page instead of continuing with mixed facts.
 
 ## Error handling
 
@@ -101,6 +101,6 @@ Do not treat `partial` or `unknown` as a full set, or as evidence that no Resour
 
 Exit `0` means the command returned successfully; still check its status and verification fields. Exit `1` is a failed command or health check. Exit `2` records a tracked scope/risk violation. Exit `3` is a recovery conflict.
 
-Caller fields (`--actor`, `--agent`, `--model`, `--tool`, `--client-run-id`) are audit metadata, not authentication. Reuse the caller run ID for related calls and preserve Atlas-generated operation IDs.
+Caller fields (`--actor`, `--agent`, `--model`, `--tool`, `--client-run-id`) are audit metadata, not authentication. Reuse the caller run ID for related calls and preserve Keeproot-generated operation IDs.
 
-Historical SQLite tables may exist after upgrades. They have no product or Skill command route and must not be interpreted as pending user work.
+Use the exposed product commands; do not infer pending user work from internal database tables.

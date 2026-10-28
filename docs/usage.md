@@ -1,6 +1,6 @@
 # Keeproot 使用说明
 
-Windows 预览版 `2.0.0-preview.1`。当前安装的构建编号可在“设置”中查看。
+Windows 预览版。安装的构建编号可在“设置”中查看。
 
 ## Windows安装与更新
 
@@ -21,7 +21,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-atlas.ps1 -Com
 & "$env:LOCALAPPDATA\Atlas\atlas-ui.cmd"
 ```
 
-安装目录和命令仍保留旧名 `Atlas`。源码 ZIP 使用上面的 PowerShell 命令安装；两个双击 `.cmd` 入口需要专用发布包，目前 GitHub Releases 尚未提供该安装包。
+源码 ZIP 使用上面的 PowerShell 命令安装；两个双击 `.cmd` 入口需要专用发布包，目前 GitHub Releases 尚未提供该安装包。
 
 更新时，先关闭 Keeproot，下载并解压新源码，再从新源码目录运行：
 
@@ -103,4 +103,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-atlas.ps1 -Com
 
 卸载会移除程序和对应 Skill，保留安装目录中的 `state`。不要把它当作缓存删除，里面包含工作记录和恢复数据。自定义安装仍需指定原 `-InstallRoot` 和 `-SkillRoot`。
 
-[已知问题与维护说明](<../CONTRIBUTING.md#validation-status-and-maintenance-priorities>) · [许可](<../LICENSE>)
+[已知问题与维护说明](../CONTRIBUTING.md#known-limits) · [许可](../LICENSE)

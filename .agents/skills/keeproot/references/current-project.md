@@ -1,6 +1,6 @@
 # Existing Project directory
 
-Use this route when the user has provided and authorized an exact existing local directory. Registration records metadata; it does not move files, clean folders, grant authority over siblings, or prove earlier Host changes were protected by Atlas.
+Use this route when the user has provided and authorized an exact existing local directory. Registration records metadata; it does not move files, clean folders, grant authority over siblings, or prove earlier Host changes were protected by Keeproot.
 
 ## Discover
 
@@ -24,7 +24,7 @@ Write a request outside the governed directory:
 }
 ```
 
-Call `project register prepare --request-file <request.json> --json`. Review the returned Project scope, Root strategy, existing identity and status. Default registration adopts exactly the selected folder if no containing Root exists; it does not silently adopt its parent. A containing Root already registered in Atlas does not extend the authority of this task.
+Call `project register prepare --request-file <request.json> --json`. Review the returned Project scope, Root strategy, existing identity and status. Default registration adopts exactly the selected folder if no containing Root exists; it does not silently adopt its parent. A containing Root already registered in Keeproot does not extend the authority of this task.
 
 ## Execute and read back
 
