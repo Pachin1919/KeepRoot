@@ -102,6 +102,17 @@ test('locale interface falls back to English and keeps names and route identity 
   assert.match(renderTopbar({ project: { id: 'P', name: '一个很长的项目名称' }, locale: 'zh-CN' }), /搜索项目和资源/u);
 });
 
+test('PPTX inspection displays slide statistics in order', () => {
+  const work = { work_id: 'FW-1', file_path: 'slides.pptx', inspect: { purpose: 'content' } };
+  const html = renderFileWorkView({ mode: 'ready', work, inspection: {
+    source: { path: work.file_path }, extraction: { kind: 'pptx', slides: [
+      { text: 'Slide', notes: '', image_count: 2, table_count: 0 },
+      { text: '', notes: 'Notes', image_count: 0, table_count: 3 },
+    ] },
+  } }, { locale: 'en', fileBackHref: '/files' });
+  assert.match(html, /Slides with extracted text<\/dt><dd>1<\/dd>.*Speaker notes found<\/dt><dd>1<\/dd>.*Images on checked slides<\/dt><dd>2<\/dd>.*Tables on checked slides<\/dt><dd>3<\/dd>/su);
+});
+
 test('single-file Import translates states and keeps Project, file and form identity', () => {
   assert.deepEqual(Object.keys(FILE_WORK_MESSAGES.en).sort(), Object.keys(FILE_WORK_MESSAGES['zh-CN']).sort());
   const options = { locale: 'zh-CN', csrfToken: 'csrf', fileBackHref: '/files', projectBasePath: '/projects/' };

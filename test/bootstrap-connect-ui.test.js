@@ -218,6 +218,6 @@ test('Projects connection preview and confirmation preserve settings from an alr
   assert.equal(path.resolve(location.root_path), path.resolve(root));
   assert.equal(location.relative_path, relativePath);
   assert.equal(sourceFingerprint(root), before);
-  assert.equal(registry.listRoots().find((item) => item.id === rootId).root_type, existingRoot.root_type);
-  assert.equal(registry.listRoots().find((item) => item.id === rootId).content_policy, existingRoot.content_policy);
+  assert.equal(rootAfter.root_type, existingRoot.root_type);
+  assert.equal(rootAfter.content_policy, existingRoot.content_policy);
 });

@@ -90,10 +90,15 @@ function inspectionDetails(inspection, options) {
   } else if (extraction.kind === 'pptx') {
     if (Number.isFinite(extraction.slide_count)) factsByKind.push([ui(options, 'slides'), extraction.slide_count.toLocaleString()]);
     if (Array.isArray(extraction.slides)) {
-      factsByKind.push([ui(options, 'slides_with_text'), extraction.slides.filter((slide) => slide.text).length.toLocaleString()]);
-      factsByKind.push([ui(options, 'speaker_notes'), extraction.slides.filter((slide) => slide.notes).length.toLocaleString()]);
-      const images = extraction.slides.reduce((total, slide) => total + (Number(slide.image_count) || 0), 0);
-      const tables = extraction.slides.reduce((total, slide) => total + (Number(slide.table_count) || 0), 0);
+      let textSlides = 0, notesSlides = 0, images = 0, tables = 0;
+      for (const slide of extraction.slides) {
+        if (slide.text) textSlides++;
+        if (slide.notes) notesSlides++;
+        images += Number(slide.image_count) || 0;
+        tables += Number(slide.table_count) || 0;
+      }
+      factsByKind.push([ui(options, 'slides_with_text'), textSlides.toLocaleString()]);
+      factsByKind.push([ui(options, 'speaker_notes'), notesSlides.toLocaleString()]);
       if (images) factsByKind.push([ui(options, 'images_on_slides'), images.toLocaleString()]);
       if (tables) factsByKind.push([ui(options, 'tables_on_slides'), tables.toLocaleString()]);
     }

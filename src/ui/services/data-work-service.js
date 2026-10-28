@@ -19,23 +19,24 @@ function completeMapping(value, mapping = value.mapping) {
   const expected = value.sources.flatMap((item) => (item.profile?.profile?.fields ?? []).map((field) => ({
     key: `${item.source_key}\u0000${field.name}`, source_sha256: item.fingerprint?.sha256 ?? null, source_sheet: item.sheet ?? null,
   })));
-  const actual = mapping.map((item) => `${item.source_key}\u0000${item.column}`);
-  return mapping.length === expected.length && new Set(actual).size === actual.length
+  const actual = new Map(mapping.map((item) => [`${item.source_key}\u0000${item.column}`, item]));
+  return mapping.length === expected.length && actual.size === mapping.length
     && expected.every((fact) => {
-      const item = mapping.find((entry) => `${entry.source_key}\u0000${entry.column}` === fact.key);
+      const item = actual.get(fact.key);
       return item && String(item.canonical ?? '').trim() && item.source_sha256 === fact.source_sha256 && (item.source_sheet ?? null) === fact.source_sheet;
     });
 }
 function reuseFieldMismatch(recordedProfile, currentProfile) {
   const recorded = recordedProfile?.profile?.fields ?? [];
   const current = currentProfile?.profile?.fields ?? [];
+  const recordedNames = new Set(recorded.map((field) => field.name));
   const currentByName = new Map(current.map((field) => [field.name, field]));
   const missing = recorded.filter((field) => !currentByName.has(field.name)).map((field) => field.name);
   const incompatible = recorded.filter((field) => {
     const next = currentByName.get(field.name);
     return next && field.inferred_type && next.inferred_type && field.inferred_type !== next.inferred_type;
   }).map((field) => ({ field: field.name, recorded_type: field.inferred_type, current_type: currentByName.get(field.name).inferred_type }));
-  const added = current.filter((field) => !recorded.some((entry) => entry.name === field.name)).map((field) => field.name);
+  const added = current.filter((field) => !recordedNames.has(field.name)).map((field) => field.name);
   return { missing, incompatible, added };
 }
 function stateConflict(message) { const error = new Error(message); error.code = 'ATLAS_STATE_CONFLICT'; return error; }
@@ -184,10 +185,10 @@ export function createDataWorkService({
     if (!value) return null;
     const project = projectCache.get(value.project_id) ?? { id: value.project_id };
     const sources = value.sources.map((item) => {
-      const detail = resourceControl?.describe(item.resource_id) ?? null;
-      const location = detail?.locations?.find((entry) => entry.project_id === value.project_id && entry.status === 'active')
-        ?? detail?.locations?.find((entry) => entry.status === 'active')
-        ?? detail?.locations?.at(-1)
+      const detail = resourceControl.describe(item.resource_id);
+      const location = detail.locations.find((entry) => entry.project_id === value.project_id && entry.status === 'active')
+        ?? detail.locations.find((entry) => entry.status === 'active')
+        ?? detail.locations.at(-1)
         ?? null;
       const filePath = location?.path ?? null;
       const present = filePath && fs.existsSync(filePath);
@@ -199,7 +200,7 @@ export function createDataWorkService({
         error_message: status === item.status ? item.error_message : status === 'missing' ? 'The selected Resource is no longer available at its recorded location.' : 'Work supports CSV or XLSX Resources.',
         file_path: filePath,
         resource_href: `/projects/${encodeURIComponent(value.project_id)}/resources?resource_id=${encodeURIComponent(item.resource_id)}`,
-        name: detail?.resource?.display_name ?? (filePath ? path.basename(filePath) : item.resource_id),
+        name: detail.resource.display_name ?? (filePath ? path.basename(filePath) : item.resource_id),
         sheets: item.profile?.sheets ?? null,
       };
     });
@@ -212,7 +213,7 @@ export function createDataWorkService({
     let value = repository.latestOpenForProject(project.id);
     if (!value) value = repository.create({ projectId: project.id, returnState: returnState ?? {}, at: isoNow() });
     else if (returnState) value = repository.updateReturnState(value.session_id, returnState, isoNow());
-    return persistentSession(value.session_id);
+    return persistentSession(value);
   };
   const createProjectSession = (project, returnState = {}, resourceIds = [], metadata = {}) => {
     if (!repository || !resourceControl) throw new Error('Persistent Work Sessions require the Atlas Resource store.');
@@ -220,7 +221,7 @@ export function createDataWorkService({
     projectCache.set(project.id, project);
     const targets = [...new Set((Array.isArray(resourceIds) ? resourceIds : []).map(String))];
     for (const resourceId of targets) workResource(project.id, resourceId);
-    return persistentSession(repository.create({ projectId: project.id, returnState, resourceIds: targets, intent: metadata.intent ?? null, caller: metadata.caller ?? null, at: isoNow() }).session_id);
+    return persistentSession(repository.create({ projectId: project.id, returnState, resourceIds: targets, intent: metadata.intent ?? null, caller: metadata.caller ?? null, at: isoNow() }));
   };
   const reuseProjectSession = (sourceSessionId, { baseRevision, sourceAssignments = null, intent = null, caller = null } = {}) => {
     if (!repository || !resourceControl) throw new Error('Persistent Work Sessions require the Atlas Resource store.');
@@ -246,23 +247,24 @@ export function createDataWorkService({
       for (const item of sourceSession.sources) workResource(sourceSession.project_id, item.resource_id);
     }
     const reused = repository.reuse({ sourceSessionId, baseRevision: Number(baseRevision), sourceAssignments: assignments, intent, caller, at: isoNow() });
-    return persistentSession(reused.session_id);
+    return persistentSession(reused);
   };
   const currentProjectSession = (project) => {
     if (!repository || !project?.id) return null;
     projectCache.set(project.id, project);
     const value = repository.latestOpenForProject(project.id);
-    return value ? persistentSession(value.session_id) : null;
+    return persistentSession(value);
   };
   const openProjectSessions = (project) => {
     if (!repository || !project?.id) return [];
     projectCache.set(project.id, project);
-    return repository.listOpenForProject(project.id).map((value) => persistentSession(value.session_id)).filter(Boolean);
+    return repository.listOpenForProject(project.id).map(persistentSession);
   };
   const discoverProjectSessions = (project, { limit = 20, offset = 0 } = {}) => {
     if (!project?.id) throw new Error('Project-scoped Work discovery requires one Project.');
     projectCache.set(project.id, project);
     const listing = repository?.listForProject(project.id, { limit, offset }) ?? { sessions: [], total: 0 };
+    const resourceNames = new Map();
     const works = listing.sessions.map((value) => ({
       session_id: value.session_id,
       project_id: value.project_id,
@@ -274,9 +276,8 @@ export function createDataWorkService({
       updated_at: value.updated_at,
       source_count: value.sources.length,
       sources: value.sources.map((item) => {
-        let name = item.resource_id;
-        try { name = resourceControl?.describe(item.resource_id)?.resource?.display_name ?? name; } catch { /* Retain the stored identity when its record cannot be read. */ }
-        return { resource_id: item.resource_id, name, status: item.status, version_policy: item.version_policy ?? 'follow_latest' };
+        if (!resourceNames.has(item.resource_id)) resourceNames.set(item.resource_id, resourceControl.ledger.resources.byId(item.resource_id)?.display_name ?? item.resource_id);
+        return { resource_id: item.resource_id, name: resourceNames.get(item.resource_id), status: item.status, version_policy: item.version_policy ?? 'follow_latest' };
       }),
       latest_save_id: value.latest_save_id,
       reused_from_session_id: value.reused_from_session_id,
@@ -303,35 +304,34 @@ export function createDataWorkService({
     if (!targets.length) throw new Error('Choose at least one CSV or XLSX Resource.');
     for (const resourceId of targets) workResource(value.project_id, resourceId);
     discardPersistentStage(id);
-    return persistentSession(repository.replaceSources({ sessionId: id, resourceIds: targets, baseRevision, returnState, at: isoNow() }).session_id);
+    return persistentSession(repository.replaceSources({ sessionId: id, resourceIds: targets, baseRevision, returnState, at: isoNow() }));
   };
   const addSource = (id, resourceId, { baseRevision = null } = {}) => {
     const value = repository?.byId(id);
     if (!value || value.status !== 'open') throw new Error('This Work Session is unavailable.');
     workResource(value.project_id, resourceId);
     assertRevision(id, baseRevision);
-    discardPersistentStage(id); return persistentSession(repository.addSource({ sessionId: id, resourceId, baseRevision, at: isoNow() }).session_id);
+    discardPersistentStage(id); return persistentSession(repository.addSource({ sessionId: id, resourceId, baseRevision, at: isoNow() }));
   };
   const removeSource = (id, resourceId, { baseRevision = null } = {}) => {
     const value = repository?.byId(id);
     if (!value || value.status !== 'open') throw new Error('This Work Session is unavailable.');
     assertRevision(id, baseRevision);
-    discardPersistentStage(id); return persistentSession(repository.removeSource(id, resourceId, isoNow(), baseRevision).session_id);
+    discardPersistentStage(id); return persistentSession(repository.removeSource(id, resourceId, isoNow(), baseRevision));
   };
   const comparison = (value) => {
     const ready = value.sources.filter((item) => item.status === 'ready' && item.profile?.profile?.fields);
-    const names = ready.map((item) => new Set(item.profile.profile.fields.map((field) => field.name)));
-    const common = names.length ? [...names[0]].filter((name) => names.every((set) => set.has(name))) : [];
-    const all = [...new Set(names.flatMap((set) => [...set]))];
-    const unique = ready.map((item) => ({ source_key: item.source_key, fields: item.profile.profile.fields.map((field) => field.name).filter((name) => !common.includes(name)) }));
-    const conflicts = all.map((name) => {
-      const types = ready.flatMap((item) => item.profile.profile.fields.filter((field) => field.name === name).map((field) => ({ source_key: item.source_key, type: field.inferred_type })));
-      return new Set(types.map((item) => item.type)).size > 1 ? { field: name, types } : null;
-    }).filter(Boolean);
-    return { common_fields: common, unique_fields: unique, type_conflicts: conflicts };
+    const fields = Map.groupBy(ready.flatMap(item => item.profile.profile.fields.map(field => ({ name: field.name, source_key: item.source_key, type: field.inferred_type }))), field => field.name);
+    const common = new Set([...fields].filter(([, entries]) => new Set(entries.map(entry => entry.source_key)).size === ready.length).map(([name]) => name));
+    return {
+      common_fields: [...common],
+      unique_fields: ready.map(item => ({ source_key: item.source_key, fields: item.profile.profile.fields.map(field => field.name).filter(name => !common.has(name)) })),
+      type_conflicts: [...fields].filter(([, entries]) => new Set(entries.map(entry => entry.type)).size > 1)
+        .map(([field, entries]) => ({ field, types: entries.map(({ source_key, type }) => ({ source_key, type })) })),
+    };
   };
-  const persistentSession = (id) => {
-    const value = hydratePersistent(repository?.byId(id));
+  const persistentSession = (stored) => {
+    const value = hydratePersistent(stored);
     const reusedFrom = value?.reused_from_session_id ? repository?.byId(value.reused_from_session_id) : null;
     return value ? {
       ...value,
@@ -349,12 +349,13 @@ export function createDataWorkService({
   };
   const validateSources = async (id) => {
     const stored = repository?.byId(id);
-    let value = persistentSession(id);
+    let value = persistentSession(stored);
     if (!value) return null;
     let invalidated = false;
     const reconciliations = new Map();
+    const priorStatuses = new Map(stored.sources.map(source => [source.source_key, source.status]));
     for (const item of value.sources) {
-      const priorStatus = stored?.sources.find((source) => source.source_key === item.source_key)?.status;
+      const priorStatus = priorStatuses.get(item.source_key);
       if (!item.file_path || !fs.existsSync(item.file_path)) {
         repository.setSourceStatus(id, item.source_key, 'missing', 'The selected Resource is no longer available at its recorded location.', isoNow());
         if (priorStatus !== 'missing') invalidated = true;
@@ -394,7 +395,7 @@ export function createDataWorkService({
     }
     if (invalidated) { discardPersistentStage(id); repository.invalidate(id, isoNow()); }
     const checkedAt = isoNow();
-    const current = persistentSession(id);
+    const current = persistentSession(repository.byId(id));
     if (!current) return null;
     const withReconciliation = { ...current, sources: current.sources.map((item) => ({ ...item, reconciliation: reconciliations.get(item.source_key) ?? reconciliationSummary(item, null, checkedAt) })) };
     const checked = { ...withReconciliation, freshness: freshnessSummary(withReconciliation, { checked: true, checkedAt }) };
@@ -402,7 +403,7 @@ export function createDataWorkService({
   };
   const prepareSources = async (id, { baseRevision = null } = {}) => {
     if (baseRevision != null) assertRevision(id, baseRevision);
-    let value = persistentSession(id);
+    let value = persistentSession(repository.byId(id));
     if (!value) throw new Error('This Work Session is unavailable.');
     let reconciliationRequired = false;
     let detectedNewChange = false;
@@ -452,31 +453,21 @@ export function createDataWorkService({
       throw stateConflict('One or more Sources changed. Review recorded and current facts, then choose use current, pin recorded, or stop using.');
     }
     if (baseRevision != null) assertRevision(id, baseRevision);
-    return persistentSession(id);
+    return persistentSession(repository.byId(id));
   };
 
   const reconcileSources = async (id, sourceKeys, decision, { baseRevision = null } = {}) => {
     assertRevision(id, baseRevision);
-    const value = persistentSession(id);
+    const value = persistentSession(repository.byId(id));
     const selected = [...new Set((sourceKeys ?? []).map(String))];
     if (!selected.length) throw new Error('Choose at least one Work Source to reconcile.');
     const items = selected.map((sourceKey) => value?.sources.find((entry) => entry.source_key === sourceKey));
     if (items.some((item) => !item)) throw new Error('Work Source is unavailable.');
-    if (decision === 'pin-recorded') {
-      if (items.some((item) => !item.fingerprint?.sha256)) throw new Error('Every selected Source needs a recorded version before it can be pinned.');
+    if (['pin-recorded', 'follow-latest', 'stop-using'].includes(decision)) {
+      if (decision === 'pin-recorded' && items.some((item) => !item.fingerprint?.sha256)) throw new Error('Every selected Source needs a recorded version before it can be pinned.');
       const result = repository.applySourceReconciliations(id, selected, decision, {}, isoNow(), baseRevision);
       discardPersistentStage(id);
-      return persistentSession(result.session_id);
-    }
-    if (decision === 'follow-latest') {
-      const result = repository.applySourceReconciliations(id, selected, decision, {}, isoNow(), baseRevision);
-      discardPersistentStage(id);
-      return persistentSession(result.session_id);
-    }
-    if (decision === 'stop-using') {
-      const result = repository.applySourceReconciliations(id, selected, decision, {}, isoNow(), baseRevision);
-      discardPersistentStage(id);
-      return persistentSession(result.session_id);
+      return persistentSession(result);
     }
     if (decision !== 'use-current') throw new Error('Choose use-current, pin-recorded, follow-latest, or stop-using.');
     const updates = [];
@@ -507,35 +498,39 @@ export function createDataWorkService({
     }
     const adopted = repository.applySourceReconciliations(id, selected, decision, { updates }, isoNow(), baseRevision);
     discardPersistentStage(id);
-    return persistentSession(adopted.session_id);
+    return persistentSession(adopted);
   };
   const reconcileSource = (id, sourceKey, decision, options = {}) => reconcileSources(id, [sourceKey], decision, options);
-  const selectSourceSheet = (id, sourceKey, sheet, { baseRevision = null } = {}) => { assertRevision(id, baseRevision); discardPersistentStage(id); return persistentSession(repository.setSheet(id, sourceKey, String(sheet ?? ''), isoNow(), baseRevision).session_id); };
+  const selectSourceSheet = (id, sourceKey, sheet, { baseRevision = null } = {}) => { assertRevision(id, baseRevision); discardPersistentStage(id); return persistentSession(repository.setSheet(id, sourceKey, String(sheet ?? ''), isoNow(), baseRevision)); };
   const confirmMapping = (id, mapping, { baseRevision = null } = {}) => {
     assertRevision(id, baseRevision);
-    const value = persistentSession(id);
+    const value = persistentSession(repository.byId(id));
     if (!value) throw new Error('This Work Session is unavailable.');
+    const sources = new Map(value.sources.map(source => [source.source_key, source]));
     const normalized = (mapping ?? []).map((item) => {
-      const source = value.sources.find((entry) => entry.source_key === String(item.source_key ?? ''));
+      const source = sources.get(String(item.source_key ?? ''));
       return { source_key: String(item.source_key ?? ''), column: String(item.column ?? ''), canonical: String(item.canonical ?? '').trim(), source_sha256: source?.fingerprint?.sha256 ?? null, source_sheet: source?.sheet ?? null };
     });
     if (!completeMapping(value, normalized)) throw new Error('Confirm exactly one result field for every prepared Source field.');
-    discardPersistentStage(id); return persistentSession(repository.setMapping(id, normalized, isoNow(), baseRevision).session_id);
+    discardPersistentStage(id); return persistentSession(repository.setMapping(id, normalized, isoNow(), baseRevision));
   };
-  const canonicalFields = (value) => [...new Set(value.sources.flatMap((item) => (item.profile?.profile?.fields ?? []).map((field) => value.mapping.find((entry) => entry.source_key === item.source_key && entry.column === field.name)?.canonical ?? field.name)))];
   const updateRecipe = (id, input = {}, { baseRevision = null } = {}) => {
     assertRevision(id, baseRevision);
-    const value = persistentSession(id);
+    const value = persistentSession(repository.byId(id));
     if (!value) throw new Error('This Work Session is unavailable.');
-    const fields = canonicalFields(value);
+    const mappings = Map.groupBy(value.mapping, entry => entry.source_key);
+    const sourceFields = value.sources.map(source => {
+      const names = new Map((mappings.get(source.source_key) ?? []).map(entry => [entry.column, entry.canonical]));
+      return new Set((source.profile?.profile?.fields ?? []).map(field => names.get(field.name) ?? field.name));
+    });
+    const fields = [...new Set(sourceFields.flatMap(names => [...names]))];
     const field = (name, label) => { const normalized = String(name ?? '').trim(); if (normalized && !fields.includes(normalized)) throw new Error(`${label} must use one aligned field.`); return normalized; };
     const combineOperation = input.combine === 'join' ? 'join' : 'concatenate';
     if (combineOperation === 'join' && value.sources.length !== 2) throw new Error('The first join version requires exactly two Sources.');
     let combine = { operation: 'concatenate' };
     if (combineOperation === 'join') {
       const leftKey = field(input.left_key, 'Left join key'); const rightKey = field(input.right_key, 'Right join key');
-      const sourceFields = value.sources.map((item) => new Set((item.profile?.profile?.fields ?? []).map((profileField) => value.mapping.find((entry) => entry.source_key === item.source_key && entry.column === profileField.name)?.canonical ?? profileField.name)));
-      if (!sourceFields[0]?.has(leftKey) || !sourceFields[1]?.has(rightKey)) throw new Error('Choose a join key available in its corresponding Source.');
+      if (!sourceFields[0].has(leftKey) || !sourceFields[1].has(rightKey)) throw new Error('Choose a join key available in its corresponding Source.');
       combine = { operation: 'join', how: input.join_how === 'left' ? 'left' : 'inner', left_key: leftKey, right_key: rightKey };
     }
     const steps = [];
@@ -627,13 +622,13 @@ export function createDataWorkService({
     }
     steps.push({ operation: 'validate' });
     discardPersistentStage(id);
-    return persistentSession(repository.setRecipe(id, { schema: 'atlas.table-recipe.v1', version: Number(value.recipe?.version ?? 0) + 1, combine, steps }, isoNow(), baseRevision).session_id);
+    return persistentSession(repository.setRecipe(id, { schema: 'atlas.table-recipe.v1', version: Number(value.recipe?.version ?? 0) + 1, combine, steps }, isoNow(), baseRevision));
   };
   const executePersistent = async (id, action, extension = '.csv', { baseRevision = null, detailOffset = 0, detailLimit = 20 } = {}) => {
     let value = await validateSources(id);
     if (baseRevision != null) {
       assertRevision(id, baseRevision);
-      value = persistentSession(id);
+      value = persistentSession(repository.byId(id));
     }
     if (!value?.sources.length) throw new Error('Choose at least one Source.');
     const blocked = value.sources.filter((item) => item.status !== 'ready');
@@ -658,8 +653,7 @@ export function createDataWorkService({
     assertRevision(id, value.revision);
     if (action === 'details') return result;
     if (action === 'preview') {
-      repository.setPreview(id, result, value.revision, isoNow());
-      return persistentSession(id);
+      return persistentSession(repository.setPreview(id, result, value.revision, isoNow()));
     }
     persistentStages.set(id, { stage_id: `STG-${crypto.randomUUID()}`, revision: value.revision, extension: path.extname(outputPath).toLowerCase(), path: outputPath, staged: result.staged, result });
     return persistentStages.get(id);
@@ -668,7 +662,7 @@ export function createDataWorkService({
   const focusAggregate = async (id, { category = null, clear = false, baseRevision = null, guard = null } = {}) => {
     await validateSources(id);
     assertRevision(id, baseRevision);
-    const value = persistentSession(id);
+    const value = persistentSession(repository.byId(id));
     if (!value?.preview || value.preview_revision !== value.revision || !value.preview.aggregation) throw stateConflict('Preview the current group aggregate before selecting a category.');
     const aggregation = value.preview.aggregation;
     const existing = (value.recipe?.steps ?? []).find((step) => step.focus === true);
@@ -687,7 +681,7 @@ export function createDataWorkService({
     const recipe = { ...(value.recipe ?? {}), schema: 'atlas.table-recipe.v1', version: Number(value.recipe?.version ?? 0) + 1, steps };
     discardPersistentStage(id);
     const updated = repository.setRecipe(id, recipe, isoNow(), baseRevision, guard);
-    const focused = persistentSession(updated.session_id);
+    const focused = persistentSession(updated);
     return { ...focused, focus: clear ? null : { field: aggregation.dimension, value: selected } };
   };
   const readAggregateDetails = async (id, { offset = 0, limit = 20, baseRevision = null } = {}) => {
@@ -695,13 +689,13 @@ export function createDataWorkService({
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error('Details limit must be an integer from 1 to 50.');
     await validateSources(id);
     assertRevision(id, baseRevision);
-    const value = persistentSession(id);
+    const value = persistentSession(repository.byId(id));
     if (!value?.preview || value.preview_revision !== value.revision || !value.preview.aggregation) throw stateConflict('Preview the current group aggregate before reading its processed input rows.');
     const focus = (value.recipe?.steps ?? []).find((step) => step.focus === true);
     if (!focus || focus.operation !== 'filter' || !((focus.operator === 'equals' && focus.value !== '') || (focus.operator === 'is_empty' && focus.value === '')) || focus.column !== value.preview.aggregation.dimension) throw stateConflict('Select a category from the current group aggregate before reading details.');
     const result = await executePersistent(id, 'details', '.csv', { baseRevision: value.revision, detailOffset: offset, detailLimit: limit });
     assertRevision(id, value.revision);
-    const current = persistentSession(id);
+    const current = persistentSession(repository.byId(id));
     if (current.preview_revision !== value.preview_revision || current.sources.some((item) => item.status !== 'ready')) throw stateConflict('The Work Preview or Source changed while reading details.');
     const pagination = result.details ?? {};
     return {
@@ -720,7 +714,7 @@ export function createDataWorkService({
     return value ?? null;
   };
   const clearPersistentStage = (id) => discardPersistentStage(id);
-  const recordSave = (id, saveId) => persistentSession(repository.setLatestSave(id, saveId, isoNow()).session_id);
+  const recordSave = (id, saveId) => persistentSession(repository.setLatestSave(id, saveId, isoNow()));
   const sessions = new Map();
   const legacySession = (id) => {
     const value = sessions.get(id);
@@ -729,7 +723,10 @@ export function createDataWorkService({
     value.last_active_at = activeAt;
     return value;
   };
-  const session = (id) => repository?.byId(id) ? persistentSession(id) : legacySession(id);
+  const session = (id) => {
+    const value = repository?.byId(id);
+    return value ? persistentSession(value) : legacySession(id);
+  };
   const cleanup = (id) => { const value = sessions.get(id); if (value?.staged_path) fs.rmSync(value.staged_path, { force: true }); if (value?.request_path) fs.rmSync(value.request_path, { force: true }); sessions.delete(id); };
   const invalidateStage = (value) => { if (value.staged_path) fs.rmSync(value.staged_path, { force: true }); value.staged_path = null; value.staged = null; };
   const expire = () => { for (const [id, value] of sessions) if (now() - (value.last_active_at ?? value.created_at) > SESSION_AGE_MS) cleanup(id); };

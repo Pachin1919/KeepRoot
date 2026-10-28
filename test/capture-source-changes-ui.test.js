@@ -39,9 +39,7 @@ test('Capture Source changes UI keeps safe excerpts, modes, and previous Save na
     return prepared;
   };
   const first = await prepare(conversation('<script>before()</script>'), 'changes-ui-first');
-  const nextConversation = conversation('<script>after()</script>');
-  nextConversation.mapping.answer.message.content.parts = ['<script>after()</script>'];
-  const second = await prepare(nextConversation, 'changes-ui-second');
+  const second = await prepare(conversation('<script>after()</script>'), 'changes-ui-second');
   server = await startAtlasUiServer({ stateDir, registry, intake: save.intake, projectRoot: workspace, installationRoot: workspace });
   const url = new URL(`projects/${encodeURIComponent(project.project_id)}/capture-source/${second.save_id}?mode=changes`, server.workspace_url);
   const response = await fetch(url); assert.equal(response.status, 200);

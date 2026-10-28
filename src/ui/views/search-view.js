@@ -12,8 +12,11 @@ function searchSnippet(item, model) {
   const terms = [...new Set(String(model.query ?? '').split(/[\s,，]+/u).map(term => term.trim().normalize('NFC')).filter(term => term.length >= 2 && term.length <= 64))].slice(0, 12).sort((a, b) => b.length - a.length);
   let output = '', position = 0;
   while (position < text.length) {
-    const matches = terms.map(term => ({ term, index: text.indexOf(term, position) })).filter(match => match.index >= 0).sort((a, b) => a.index - b.index || b.term.length - a.term.length);
-    const match = matches[0];
+    let match = null;
+    for (const term of terms) {
+      const index = text.indexOf(term, position);
+      if (index >= 0 && (!match || index < match.index || (index === match.index && term.length > match.term.length))) match = { term, index };
+    }
     if (!match) { output += escapeHtml(text.slice(position)); break; }
     output += escapeHtml(text.slice(position, match.index)) + `<mark>${escapeHtml(match.term)}</mark>`;
     position = match.index + match.term.length;

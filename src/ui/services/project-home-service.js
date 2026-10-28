@@ -130,21 +130,18 @@ function writeState(stateDir, projects) {
   }
 }
 
-export function readProjectHomeState(stateDir) {
-  return readState(stateDir);
-}
-
 export function createProjectHomeService({ stateDir, now = () => new Date().toISOString() }) {
   const project = (projectId) => {
     const state = readState(stateDir);
-    return { ...validProject(state.projects[projectId]), error: state.error };
+    const current = Object.hasOwn(state.projects, projectId) ? state.projects[projectId] : { pinned: [], continue: null, check: null };
+    return { ...current, error: state.error };
   };
   const update = (projectId, callback) => {
     assertStatePaths(stateDir);
     return withStateLock(stateDir, () => {
       const state = readState(stateDir);
       if (state.error) throw state.error;
-      const current = validProject(state.projects[projectId]);
+      const current = Object.hasOwn(state.projects, projectId) ? state.projects[projectId] : { pinned: [], continue: null, check: null };
       const next = validProject(callback(current));
       writeState(stateDir, { ...state.projects, [projectId]: next });
       return next;

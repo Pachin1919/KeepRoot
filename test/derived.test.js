@@ -217,7 +217,7 @@ test('Derived refuses an interrupted same-hash target without its ownership temp
     candidateContent: 'same candidate\\n', projectId, role: 'report',
   });
   derived.approve(prepared.run_id, { reason: 'test interrupted ownership' });
-  derived.ledger.startDerivedExecution(prepared.run_id, new Date().toISOString());
+  derived.ledger.derived.startDerivedExecution(prepared.run_id, new Date().toISOString());
   fs.writeFileSync(target, 'same candidate\\n', 'utf8');
 
   assert.throws(() => derived.execute(prepared.run_id), /claimed|ownership|stale/i);
@@ -315,7 +315,7 @@ test('Derived execute and rollback resume only after Atlas recorded operation in
 
   const target = path.join(vault, 'Projects', 'Atlas', 'resume.md');
   const temporary = path.join(path.dirname(target), '.atlas-derived-owned.publish.tmp');
-  derived.ledger.startDerivedExecution(prepared.run_id, new Date().toISOString(), { publish_token: 'owned', temp_path: temporary });
+  derived.ledger.derived.startDerivedExecution(prepared.run_id, new Date().toISOString(), { publish_token: 'owned', temp_path: temporary });
   fs.copyFileSync(derived.preview(prepared.run_id).candidate.blob_path, temporary, fs.constants.COPYFILE_EXCL);
   fs.linkSync(temporary, target);
   assert.equal(derived.execute(prepared.run_id).status, 'executed');
@@ -323,7 +323,7 @@ test('Derived execute and rollback resume only after Atlas recorded operation in
   assert.equal(derived.execute(prepared.run_id).status, 'executed');
   assert.equal(fs.existsSync(temporary), false);
 
-  derived.ledger.startDerivedRollback(prepared.run_id, new Date().toISOString());
+  derived.ledger.derived.startDerivedRollback(prepared.run_id, new Date().toISOString());
   fs.rmSync(target);
   assert.equal(derived.rollback(prepared.run_id).status, 'rolled_back');
 });
@@ -340,7 +340,7 @@ test('Derived locked preflight gates new publication but preserves proven public
   derived.approve(resumed.run_id);
   const target = path.join(vault, 'Projects', 'Atlas', 'resumed-preflight.md');
   const temporary = path.join(path.dirname(target), '.atlas-derived-owned-preflight.publish.tmp');
-  derived.ledger.startDerivedExecution(resumed.run_id, new Date().toISOString(), { publish_token: 'preflight-owned', temp_path: temporary });
+  derived.ledger.derived.startDerivedExecution(resumed.run_id, new Date().toISOString(), { publish_token: 'preflight-owned', temp_path: temporary });
   fs.copyFileSync(derived.preview(resumed.run_id).candidate.blob_path, temporary, fs.constants.COPYFILE_EXCL);
   fs.linkSync(temporary, target);
   assert.equal(derived.execute(resumed.run_id, { internalPreflight: () => { throw new Error('must skip preflight for proven publication recovery'); } }).status, 'executed');

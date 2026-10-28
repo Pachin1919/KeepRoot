@@ -2,6 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderDataWorkView } from '../src/ui/views/data-work-view.js';
 
+test('field mapping renders the first matching source and column', () => {
+  const session = { session_id: 'DWT-map', revision: 1, mapping_complete: true,
+    sources: [{ source_key: 'one', name: 'input.csv', status: 'ready', profile: { profile: { fields: [{ name: 'amount' }] } } }],
+    mapping: [{ source_key: 'one', column: 'amount', canonical: 'first' }, { source_key: 'one', column: 'amount', canonical: 'second' }],
+    recipe: { version: 1, combine: { operation: 'concatenate' }, steps: [] } };
+  const html = renderDataWorkView({ mode: 'sources', session, csrf: 'csrf', back_href: '/projects/P/resources' }, { locale: 'en' });
+  assert.match(html, /name="canonical" value="first"/u);
+  assert.match(html, /name="select_column" value="first"/u);
+  assert.doesNotMatch(html, /name="(?:canonical|select_column)" value="second"/u);
+});
+
 test('Table Work Recipe exposes bounded group-sum controls and the exact aggregate Preview facts', () => {
   const session = {
     session_id: 'DWT-0123456789abcdef0123456789abcdef', project_id: 'PRJ-aggregate', project_name: 'Traffic',

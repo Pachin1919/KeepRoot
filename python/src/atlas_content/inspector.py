@@ -11,7 +11,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from .common import CharacterBudget, validate_office_package, xml_root, zip_entry_names
-from .delimited import choose_header, indexed_rows, read_delimited_file, unique_headers
+from .delimited import choose_header, column_label, indexed_rows, read_delimited_file, unique_headers
 from .document_readers import read_docx, read_pdf, read_pptx
 
 PROCESSOR_VERSION = "0.3.4"
@@ -176,15 +176,6 @@ def column_index(cell_reference: str) -> int:
     for character in match.group(1):
         result = result * 26 + ord(character) - ord("A") + 1
     return result - 1
-
-
-def column_label(index: int) -> str:
-    value = index + 1
-    result = ""
-    while value:
-        value, remainder = divmod(value - 1, 26)
-        result = chr(ord("A") + remainder) + result
-    return result
 
 
 def worksheet_rows_with_strings(

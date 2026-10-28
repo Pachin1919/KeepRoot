@@ -200,17 +200,18 @@ export class SaveService {
     if (!fs.existsSync(path.join(this.stateDir, 'ledger.sqlite'))) return;
     this.resourceControl ??= createResourceControl({ stateDir: this.stateDir });
     const ledger = this.resourceControl.ledger;
-    assertRecoveryWritable(ledger.db, { projectId });
+    const resourceIds = new Set();
     for (const item of [source, ...(source?.sources ?? [])].filter(Boolean)) {
       const resourceId = item.resource_id ?? (item.path ? ledger.resources.byPath(path.resolve(item.path))?.id : null);
-      if (resourceId) assertRecoveryWritable(ledger.db, { resourceId });
+      if (resourceId) resourceIds.add(resourceId);
     }
     for (const input of inputs) {
       const file = typeof input === 'string' ? input : input.relative_path;
       if (!file || (!root && !path.isAbsolute(file))) continue;
       const resourceId = ledger.resources.byPath(path.resolve(root ?? '.', file))?.id;
-      if (resourceId) assertRecoveryWritable(ledger.db, { resourceId });
+      if (resourceId) resourceIds.add(resourceId);
     }
+    assertRecoveryWritable(ledger.db, { projectId, resourceIds });
   }
   #assertRowWritable(row) {
     if (!row) return;
@@ -662,9 +663,9 @@ export class SaveService {
   }
 
   execute(saveId, { reason, expectedPreviewRevision = null } = {}) {
-    this.#assertOriginalSaveLocation(readJournal(this.stateDir).find((row) => row.save_id === saveId));
-    this.#assertRowWritable(readJournal(this.stateDir).find((row) => row.save_id === saveId));
     const savedRow = readJournal(this.stateDir).find((row) => row.save_id === saveId);
+    this.#assertOriginalSaveLocation(savedRow);
+    this.#assertRowWritable(savedRow);
     if (savedRow?.prepare_request?.expected_plan_revision != null && expectedPreviewRevision == null) {
       throw conflict('This V20-bound Save requires the reviewed preview revision before Execute.');
     }
@@ -705,8 +706,9 @@ export class SaveService {
   }
 
   undo(saveId) {
-    this.#assertOriginalSaveLocation(readJournal(this.stateDir).find((row) => row.save_id === saveId));
-    this.#assertRowWritable(readJournal(this.stateDir).find((row) => row.save_id === saveId));
+    const savedRow = readJournal(this.stateDir).find((row) => row.save_id === saveId);
+    this.#assertOriginalSaveLocation(savedRow);
+    this.#assertRowWritable(savedRow);
     const before = this.show(saveId);
     if (!before.undo_available) throw conflict('Undo is not available for this save.');
     const claimed = mutate(this.stateDir, saveId, (row) => {
@@ -735,8 +737,9 @@ export class SaveService {
   }
 
   redo(saveId) {
-    this.#assertOriginalSaveLocation(readJournal(this.stateDir).find((row) => row.save_id === saveId));
-    this.#assertRowWritable(readJournal(this.stateDir).find((row) => row.save_id === saveId));
+    const savedRow = readJournal(this.stateDir).find((row) => row.save_id === saveId);
+    this.#assertOriginalSaveLocation(savedRow);
+    this.#assertRowWritable(savedRow);
     const before = this.show(saveId);
     if (!before.redo_available || before.status !== 'undone') throw conflict('Redo is not available for this save.');
     const claimed = mutate(this.stateDir, saveId, (row) => {

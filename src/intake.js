@@ -617,7 +617,11 @@ export class Intake {
     if (!Array.isArray(items) || items.length === 0) throw new Error('Intake batch plan requires at least one item.');
     const plans = items.map((item, index) => ({ index, ...this.plan({ root, ...item }) }));
     const questionMap = new Map();
+    const summary = { total: plans.length, ready: 0, unresolved: 0, blocked: 0 };
     for (const item of plans) {
+      if (item.status === 'ready') summary.ready++;
+      else if (item.status === 'blocked') summary.blocked++;
+      else summary.unresolved++;
       for (const question of item.questions ?? []) {
         const key = `${question.field}|${question.prompt}`;
         const aggregated = questionMap.get(key) ?? { ...question, item_indices: [] };
@@ -627,87 +631,11 @@ export class Intake {
     }
     return {
       schema: 'atlas-intake-batch-plan.v1',
-      status: plans.every((item) => item.status === 'ready') ? 'ready' : 'needs_input',
-      summary: {
-        total: plans.length,
-        ready: plans.filter((item) => item.status === 'ready').length,
-        unresolved: plans.filter((item) => !['ready', 'blocked'].includes(item.status)).length,
-        blocked: plans.filter((item) => item.status === 'blocked').length,
-      },
+      status: summary.ready === plans.length ? 'ready' : 'needs_input',
+      summary,
       items: plans,
       questions: [...questionMap.values()],
       source_changes: [],
-    };
-  }
-
-  batchExecute({ root, items, reason, caller = {} }) {
-    if (!reason?.trim()) throw new Error('Intake batch execution requires the current user authorization reason.');
-    if (!Array.isArray(items) || items.length === 0) {
-      throw new Error('Intake batch execution requires at least one item.');
-    }
-    if (items.length > 100) throw new Error('Intake batch execution supports at most 100 items.');
-
-    const plan = this.batchPlan({ root, items });
-    const localInputBytes = plan.items.reduce(
-      (total, item) => total + Number(item.candidate?.byte_size ?? 0),
-      0,
-    );
-    if (plan.status !== 'ready' || plan.summary.ready !== items.length) {
-      return {
-        schema: 'atlas-intake-batch-execution.v1',
-        status: 'needs_input',
-        summary: plan.summary,
-        items: plan.items.map((item) => ({
-          index: item.index,
-          status: item.status,
-          reason: item.reason,
-          target: item.target,
-          project: item.project,
-          questions: item.questions,
-        })),
-        questions: plan.questions,
-        runtime_processes: 1,
-        local_input_bytes: localInputBytes,
-        content_body_reads: 0,
-        model_visible_body_bytes: 0,
-        source_changes: [],
-      };
-    }
-
-    const prepared = items.map((item, index) => {
-      const result = this.prepare({ root, ...item, caller });
-      if (!result.run_id || result.status !== 'prepared' || !result.auto_execute) {
-        throw new Error(`Intake batch item ${index} did not produce an executable prepared run.`);
-      }
-      return result;
-    });
-    const receipts = prepared.map((item, index) => {
-      const receipt = this.execute(item.run_id, { reason: reason.trim() });
-      return {
-        index,
-        run_id: item.run_id,
-        project: item.project,
-        classification: item.classification,
-        target: item.target,
-        verified: receipt.verified === true,
-        rollback_ready: receipt.rollback_ready === true,
-        content_hash: receipt.content_hash ?? receipt.output_hash ?? null,
-      };
-    });
-    return {
-      schema: 'atlas-intake-batch-execution.v1',
-      status: 'executed',
-      summary: {
-        total: receipts.length,
-        executed: receipts.filter((item) => item.verified).length,
-        unresolved: 0,
-      },
-      items: receipts,
-      runtime_processes: 1,
-      local_input_bytes: localInputBytes,
-      content_body_reads: 0,
-      model_visible_body_bytes: 0,
-      source_changes: receipts.map((item) => item.target),
     };
   }
 

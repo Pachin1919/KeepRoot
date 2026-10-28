@@ -58,10 +58,6 @@ function boundedError(file, error) {
   return { file: String(file).slice(0, 160), message: String(error?.message ?? error).slice(0, 360) };
 }
 
-function languageDirectory(stateDir) {
-  return path.join(path.resolve(stateDir), 'ui', 'languages');
-}
-
 function ensureLanguageDirectory(stateDir) {
   const resolvedState = path.resolve(stateDir);
   if (!walkNoLinks(resolvedState)) throw new TypeError('Language pack state directory must already exist without symbolic links or junctions.');

@@ -65,6 +65,21 @@ test('V19-04 Board show returns Resource-precise Source and Result freshness pro
   assert.equal(shown.impact_lanes.some((item) => item.source.resource_id === f.foreignResource.resource_id), false);
 });
 
+test('Board shares the output status hash and retains the separate preview verification', t => {
+  const f = fixture(t); const service = f.makeService(); const board = service.createBoard({ projectId: f.project.project_id, title: 'Output check' });
+  service.saveBoard({ projectId: f.project.project_id, boardId: board.board_id, title: board.title, baseRevision: board.revision,
+    blocks: [{ type: 'result_preview', save_id: f.saveA.save_id, version_policy: 'pinned_version' }] });
+  const file = f.saveA.target.path, open = fs.openSync; let reads = 0;
+  fs.openSync = function (target, ...rest) { if (target === file) reads++; return open.call(this, target, ...rest); };
+  try {
+    const first = service.showBoard(f.project.project_id, board.board_id).blocks[0];
+    assert.equal(reads, 2, 'one output status check and one preview verification'); assert.equal(first.status, 'fresh'); assert.equal(first.current_sha256, f.saveA.verification.sha256);
+    fs.appendFileSync(file, 'changed\n'); reads = 0;
+    const second = service.showBoard(f.project.project_id, board.board_id).blocks[0];
+    assert.equal(reads, 2); assert.equal(second.status, 'needs_review'); assert.notEqual(second.current_sha256, first.current_sha256);
+  } finally { fs.openSync = open; }
+});
+
 test('V19-04 Board portable delivery prepares self-contained HTML through SaveService', async (t) => {
   const f = fixture(t); const service = f.makeService(); const board = service.createBoard({ projectId: f.project.project_id, title: 'Portable board' }); const saved = service.saveBoard({ projectId: f.project.project_id, boardId: board.board_id, title: board.title, baseRevision: board.revision, blocks: [{ type: 'text', text: 'Research conclusion.' }, { type: 'material_reference', resource_id: f.resource.resource_id, version_policy: 'pinned_version' }, { type: 'result_preview', save_id: f.saveA.save_id, version_policy: 'pinned_version' }] });
   const prepared = await service.preparePortableDelivery({ projectId: f.project.project_id, boardId: saved.board_id, baseRevision: saved.revision, target: 'Results/portable-board.html', caller: caller('v19-04-portable'), requestKey: 'v19-04-portable' });

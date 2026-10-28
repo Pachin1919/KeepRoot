@@ -127,8 +127,14 @@ function sources(model) {
   }).join('');
   const comparison = session.comparison ?? { common_fields: [], unique_fields: [], type_conflicts: [] };
   const ready = session.sources.filter((item) => item.status === 'ready' && item.profile?.profile?.fields);
+  const mappings = new Map();
+  for (const entry of session.mapping) {
+    let columns = mappings.get(entry.source_key);
+    if (!columns) { columns = new Map(); mappings.set(entry.source_key, columns); }
+    if (!columns.has(entry.column)) columns.set(entry.column, entry);
+  }
   const mappingRows = ready.flatMap((item) => item.profile.profile.fields.map((field) => {
-    const saved = session.mapping.find((entry) => entry.source_key === item.source_key && entry.column === field.name);
+    const saved = mappings.get(item.source_key)?.get(field.name);
     return `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(field.name)}</td><td><input type="hidden" name="source_key" value="${escapeHtml(item.source_key)}"><input type="hidden" name="column" value="${escapeHtml(field.name)}"><input name="canonical" value="${escapeHtml(saved?.canonical ?? field.name)}" required></td></tr>`;
   })).join('');
   const mappingComplete = ready.length === session.sources.length && session.mapping_complete === true;
@@ -142,12 +148,12 @@ function sources(model) {
   const comparisonPanel = ready.length && !needsChangeReview && showComparison
     ? `<section class="surface"><h2>${h('work.field_differences')}</h2>${renderFacts([[t('work.common_fields'), comparison.common_fields.join(' · ') || t('work.none')], [t('work.type_conflicts'), comparison.type_conflicts.map((item) => item.field).join(' · ') || t('work.none')]])}${comparison.unique_fields.map((item) => `<p><strong>${escapeHtml(session.sources.find((source) => source.source_key === item.source_key)?.name ?? item.source_key)}</strong>: ${escapeHtml(item.fields.join(' · ') || t('work.no_unique_fields'))}</p>`).join('')}${alignmentPanel}</section>`
     : ready.length && mappingComplete && !needsChangeReview ? `<section class="surface"><h2>${h('work.alignment')}</h2>${alignmentPanel}</section>` : '';
-  const fields = [...new Set(ready.flatMap((item) => item.profile.profile.fields.map((field) => session.mapping.find((entry) => entry.source_key === item.source_key && entry.column === field.name)?.canonical ?? field.name)))];
+  const fields = [...new Set(ready.flatMap((item) => item.profile.profile.fields.map((field) => mappings.get(item.source_key)?.get(field.name)?.canonical ?? field.name)))];
   const recipe = session.recipe ?? { version: 1, combine: { operation: 'concatenate' }, steps: [{ operation: 'validate' }] };
   const recipeStep = (operation) => recipe.steps.find((step) => step.operation === operation && !(operation === 'filter' && step.focus === true)) ?? null;
   const option = (empty, selected = '', choices = fields) => `<option value="">${escapeHtml(empty)}</option>${choices.map((field) => `<option value="${escapeHtml(field)}" ${field === selected ? 'selected' : ''}>${escapeHtml(field)}</option>`).join('')}`;
   const enumOptions = (values, selected) => values.map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
-  const mappedFields = (item) => (item?.profile?.profile?.fields ?? []).map((field) => session.mapping.find((entry) => entry.source_key === item.source_key && entry.column === field.name)?.canonical ?? field.name);
+  const mappedFields = (item) => (item?.profile?.profile?.fields ?? []).map((field) => mappings.get(item.source_key)?.get(field.name)?.canonical ?? field.name);
   const sourceColumn = recipeStep('source-column'); const cast = recipeStep('cast'); const filter = recipeStep('filter'); const focusStep = recipe.steps.find((step) => step.focus === true) ?? null; const fill = recipeStep('fill-null'); const aggregate = recipeStep('group-aggregate'); const pivot = recipeStep('pivot-aggregate'); const trend = recipeStep('trend-aggregate'); const select = recipeStep('select'); const deduplicate = recipeStep('deduplicate'); const sort = recipeStep('sort'); const rename = recipeStep('rename');
   const selectedFields = select?.columns ?? fields;
   const pivotEditor = `<details class="recipe-option" ${pivot || model.tool_hint === 'pivot' ? 'open' : ''}><summary>${h('work.pivot_aggregate')}${pivot ? h('work.enabled') : ''}</summary><p class="muted">${h('work.pivot_aggregate_help')}</p><div class="recipe-fields"><label>${h('work.pivot_row_dimension')} <select name="pivot_row_dimension">${option(t('work.choose_pivot_field'), pivot?.row_dimension)}</select></label><label>${h('work.pivot_column_dimension')} <select name="pivot_column_dimension">${option(t('work.choose_pivot_field'), pivot?.column_dimension)}</select></label><label>${h('work.pivot_measure')} <select name="pivot_measure">${option(t('work.choose_pivot_measure'), pivot?.measure)}</select></label><label>${h('work.pivot_formula')} <select name="pivot_formula">${enumOptions([['sum', 'sum']], pivot?.formula ?? 'sum')}</select></label><label>${h('work.pivot_unit')} <input name="pivot_unit" maxlength="40" value="${escapeHtml(pivot?.unit ?? '')}"></label><label>${h('work.pivot_null_policy')} <select name="pivot_null_policy">${enumOptions([['exclude', t('work.aggregate_exclude')]], pivot?.null_policy ?? 'exclude')}</select></label></div></details>`;

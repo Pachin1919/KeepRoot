@@ -1330,11 +1330,19 @@ export class Bootstrap {
     const predictions = inferPredictions(entries, scanMode);
     const startedAt = timestamp();
     const runId = makeScanId();
+    let files = 0, markdownFiles = 0, directories = 0, symlinks = 0;
+    for (const entry of entries) {
+      if (entry.kind === 'file') {
+        files++;
+        if (entry.extension === '.md') markdownFiles++;
+      } else if (entry.kind === 'directory') directories++;
+      else if (entry.kind === 'symlink') symlinks++;
+    }
     const summary = {
-      files: entries.filter((entry) => entry.kind === 'file').length,
-      markdown_files: entries.filter((entry) => entry.kind === 'file' && entry.extension === '.md').length,
-      directories: entries.filter((entry) => entry.kind === 'directory').length,
-      symlinks: entries.filter((entry) => entry.kind === 'symlink').length,
+      files,
+      markdown_files: markdownFiles,
+      directories,
+      symlinks,
       ignored_paths: ignoredPaths,
       ignore_rules: ignoreRules,
       scan_mode: scanMode,

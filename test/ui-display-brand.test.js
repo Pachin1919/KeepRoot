@@ -64,8 +64,13 @@ test('owned signature and paper assets remain available through the shared UI co
   const server = await startAtlasUiServer({ stateDir, registry, rules: {} });
   t.after(async () => { await server.close(); registry.dispose(); fs.rmSync(stateDir, { recursive: true, force: true }); });
   const page = await (await fetch(`${server.workspace_url}projects`)).text();
+  const stylesheet = page.match(/<link rel="stylesheet" href="([^"]+)"/u)?.[1];
+  assert.ok(stylesheet);
+  const styleResponse = await fetch(new URL(stylesheet, server.workspace_url));
+  assert.equal(styleResponse.status, 200);
+  const chrome = page + await styleResponse.text();
   for (const name of ['pachin-calligraphy.png', 'pachin-seal.png', 'atlas-paper-texture.png']) {
-    assert.ok(page.includes(`/ui/${name}`), `shared chrome references ${name}`);
+    assert.ok(chrome.includes(`/ui/${name}`), `shared chrome references ${name}`);
     const response = await fetch(`${server.workspace_url}ui/${name}`);
     assert.equal(response.status, 200);
     assert.match(response.headers.get('content-type'), /^image\/png/u);

@@ -15,7 +15,7 @@ import { Registry } from '../src/registry.js';
 import { startAtlasUiServer } from '../src/ui-server.js';
 import { renderStatusGuide } from '../src/ui/components.js';
 import { browseProjectFiles, listProjectFolders, searchProjectFiles } from '../src/ui/project-files.js';
-import { buildProjectResourceDetailModel, buildProjectResourcesModel, summarizeProjectResources } from '../src/ui/read-model/project-resources-model.js';
+import { buildProjectResourceDetailModel, buildProjectResourcesModel } from '../src/ui/read-model/project-resources-model.js';
 import { readRecentWorkState, removeRecentWork, upsertRecentWork } from '../src/ui/recent-work.js';
 import {
   beginCurrentActivity, failCurrentActivity, finishCurrentActivity, readCurrentActivityState,
@@ -41,6 +41,19 @@ import { describeFileReadFailure } from '../src/ui/file-read-failure.js';
 
 const testRoot = path.resolve('test', '.tmp');
 const temporaryRoots = new Set();
+
+async function readResourceSourceContext(target) {
+  const reader = await fetch(target); assert.equal(reader.status, 200);
+  const html = await reader.text();
+  const sourceHref = html.match(/href="([^"]*source=1[^"]*)"/u)?.[1];
+  assert.ok(sourceHref, 'Reader must provide its source context link.');
+  const sourceUrl = new URL(sourceHref.replaceAll('&amp;', '&'), reader.url);
+  assert.equal(sourceUrl.origin, new URL(reader.url).origin);
+  assert.equal(sourceUrl.searchParams.get('resource_id'), new URL(reader.url).searchParams.get('resource_id'));
+  assert.equal(sourceUrl.searchParams.get('source'), '1');
+  const context = await fetch(sourceUrl); assert.equal(context.status, 200);
+  return context.text();
+}
 
 after(() => {
   for (const directory of temporaryRoots) {
@@ -114,6 +127,30 @@ test('Project folder choices expose existing folders without offering the Projec
   assert.deepEqual(result.items.map((item) => item.relative_path), ['Data', 'Data/TikTok', 'Reports']);
   assert.equal(result.items.some((item) => item.relative_path === ''), false);
   assert.equal(result.items.some((item) => item.relative_path.includes('.git')), false);
+});
+
+test('Import destination choices read the Project list once and only open selected folders', (t) => {
+  const root = temporaryDirectory(t);
+  const first = path.join(root, 'first');
+  const second = path.join(root, 'second');
+  fs.mkdirSync(path.join(first, 'Data'), { recursive: true });
+  fs.mkdirSync(path.join(second, 'Reports'), { recursive: true });
+  let listCalls = 0;
+  const shown = [];
+  const service = createProjectImportService({ stateDir: path.join(root, 'state'), registry: {
+    list: () => { listCalls += 1; return [{ id: 'one', name: 'One', status: 'active' }, { id: 'two', name: 'Two', status: 'active' }]; },
+    show: (id) => { shown.push(id); return { location: { root_path: id === 'one' ? first : second, relative_path: '' } }; },
+  } });
+  const choices = service.projectChoices({ projectId: 'two' });
+  assert.deepEqual(choices.map((item) => item.id), ['two']);
+  assert.deepEqual(choices[0].folders.map((folder) => folder.relative_path), ['Reports']);
+  assert.deepEqual(shown, ['two']);
+  assert.equal(listCalls, 1);
+  shown.length = 0;
+  const all = service.projectChoices();
+  assert.deepEqual(all.map((item) => item.id), ['one', 'two']);
+  assert.deepEqual(shown, ['one', 'two']);
+  assert.equal(listCalls, 2);
 });
 
 test('Project import rejects the Project root as an implicit destination', (t) => {
@@ -716,7 +753,7 @@ test('V19-01 UI keeps Work identity and Reuse shared across Work, Resources, and
   assert.equal(reused.revision, 1);
   assert.deepEqual(f.registry.ledger.workSessions.byId(source.session_id), before);
 
-  const resourceHtml = await (await fetch(`${server.workspace_url}projects/${f.project.id}/resources?resource_id=${f.first.resource_id}`)).text();
+  const resourceHtml = await readResourceSourceContext(`${server.workspace_url}projects/${f.project.id}/resources?resource_id=${f.first.resource_id}`);
   assert.match(resourceHtml, /Related Work/u);
   assert.match(resourceHtml, /Review source freshness/u);
   assert.match(resourceHtml, new RegExp(`<dt>Revision</dt><dd>${source.revision}</dd>`, 'u'));
@@ -1199,7 +1236,7 @@ test('multi-source Work saves one verified result and preserves Recipe, lineage,
   assert.equal(createSavedWorkService({ stateDir }).activityItems().find((item) => item.save_id === executed.save_id).status, 'completed');
   const savedPage = await fetch(new URL(confirmed.headers.get('location'), server.workspace_url)); html = await savedPage.text(); assert.match(html, /first\.csv · second\.csv/u); assert.match(html, new RegExp(`Recipe<\/dt><dd>Version ${session.recipe.version}`, 'u'));
   const savedTarget = path.join(projectRoot, 'Results', 'combined-final.csv'); assert.equal(fs.existsSync(savedTarget), true);
-  const resourceHtml = await (await fetch(new URL(executed.resources_href, server.workspace_url))).text(); assert.match(resourceHtml, /first\.csv/u); assert.match(resourceHtml, /second\.csv/u); assert.match(resourceHtml, /Recipe/u);
+  const resourceHtml = await readResourceSourceContext(new URL(executed.resources_href, server.workspace_url)); assert.match(resourceHtml, /first\.csv/u); assert.match(resourceHtml, /second\.csv/u); assert.match(resourceHtml, /Recipe/u);
 
   const undone = await fetch(`${server.workspace_url}data-work/undo`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, work_id: executed.save_id, project_id: created.project_id }), redirect: 'manual' });
   assert.equal(undone.status, 303); assert.equal(fs.existsSync(savedTarget), false);
@@ -3104,12 +3141,12 @@ test('Project file discovery skips technical directories and reports folder limi
 test('Created Work is not also counted as a source or Other File', (t) => {
   const root = temporaryDirectory(t);
   const resultPath = write(path.join(root, 'result.csv'), 'value\n1\n');
-  const summary = summarizeProjectResources({
-    project: { id: 'project-1' }, root,
+  const summary = buildProjectResourcesModel({
+    project: { id: 'project-1' }, root, base: '/projects/project-1',
     recentWork: [{ project: { id: 'project-1' }, file_path: resultPath, project_transfer: { saved_at: '2026-08-14T00:00:00.000Z', origin: { file_path: 'external.csv' }, undo_available: true }, inspect: {}, source_fingerprint: {} }],
     savedWork: [{ work_id: 'saved-1', result_path: resultPath, source_path: path.join(root, 'source.csv'), created_at: '2026-08-14T00:00:00.000Z', write: { undo_available: true } }],
   });
-  assert.deepEqual({ known: summary.known_sources, created: summary.created_work, other: summary.other_files }, { known: 0, created: 1, other: 0 });
+  assert.deepEqual({ known: summary.known_sources.length, created: summary.created_work.length, other: summary.other_files.length }, { known: 0, created: 1, other: 0 });
 });
 
 test('Project Compare defaults to two different supported files inside the Atlas shell', () => {

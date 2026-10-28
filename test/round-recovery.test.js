@@ -5,6 +5,9 @@ import test from 'node:test';
 import { BoardRepository } from '../src/storage/repositories/board-repository.js';
 import { Registry } from '../src/registry.js';
 import { RoundRecovery } from '../src/round-recovery.js';
+import { RuntimeStorage } from '../src/runtime-storage.js';
+import { Tracker } from '../src/tracker.js';
+import { captureBuffer } from '../src/snapshots.js';
 
 const caller = (id) => ({ actor: 'agent', tool: 'test', client_run_id: id });
 
@@ -219,4 +222,34 @@ test('corrupted snapshot blob rejects restore without partial writes', (t) => {
   assert.throws(() => f.recovery.restore({ projectId: id, roundId: created.round_id, nodeId: created.head_node_id, baseRevision: 1, expectedDigest: created.current_digest, requestKey: 'corrupt-restore', caller: caller('corrupt') }));
   assert.equal(fs.readFileSync(path.join(f.projectRoot, 'doc.md'), 'utf8'), before);
   assert.equal(f.recovery.show({ projectId: id, roundId: created.round_id }).revision, 1);
+});
+
+for (const command of ['storage', 'gc']) test(`${command} cleanup preserves round checkpoints, scope extensions and restore insurance`, (t) => {
+  const f = fixture(t, `cleanup-${command}`), projectId = f.project.project_id;
+  const storage = new RuntimeStorage({ stateDir: f.stateDir, ledger: f.registry.ledger });
+  const tracker = new Tracker({ stateDir: f.stateDir });
+  try {
+    const initial = f.recovery.protect({ projectId, paths: ['doc.md', 'new.txt'], label: 'before', requestKey: 'protect', caller: caller(command) });
+    const basis = () => {
+      const current = f.recovery.show({ projectId, roundId: initial.round_id });
+      return { projectId, roundId: initial.round_id, baseRevision: current.revision, expectedDigest: current.current_digest, caller: caller(command) };
+    };
+    fs.writeFileSync(path.join(f.projectRoot, 'doc.md'), '# checkpoint\n');
+    f.recovery.checkpoint({ ...basis(), label: 'checkpoint', requestKey: 'checkpoint' });
+    f.recovery.extend({ ...basis(), paths: ['rows.csv'], label: 'extend', requestKey: 'extend' });
+    const orphan = captureBuffer('unreferenced cleanup fixture', f.stateDir);
+    fs.utimesSync(orphan.blobPath, new Date(0), new Date(0));
+    assert.deepEqual(storage.plan({ minAgeMs: 0 }).blob_files.map(item => item.path), [orphan.blobPath]);
+    const clean = () => command === 'storage' ? storage.execute({ minAgeMs: 0 }) : tracker.gc({ minAgeMs: 0 });
+    assert.equal(clean().deleted_blobs, 1);
+    assert.equal(fs.existsSync(orphan.blobPath), false);
+    fs.writeFileSync(path.join(f.projectRoot, 'doc.md'), '# insurance\n');
+    const restored = f.recovery.restore({ ...basis(), nodeId: initial.head_node_id, requestKey: 'restore' });
+    assert.equal(fs.readFileSync(path.join(f.projectRoot, 'doc.md'), 'utf8'), '# one\n');
+    assert.equal(fs.readFileSync(path.join(f.projectRoot, 'rows.csv'), 'utf8'), 'name,value\nA,1\n');
+    assert.equal(fs.existsSync(path.join(f.projectRoot, 'new.txt')), false);
+    assert.equal(clean().deleted_blobs, 0);
+    f.recovery.returnToLatest({ ...basis(), restoreId: restored.restore_id, requestKey: 'return' });
+    assert.equal(fs.readFileSync(path.join(f.projectRoot, 'doc.md'), 'utf8'), '# insurance\n');
+  } finally { tracker.dispose(); storage.dispose(); }
 });

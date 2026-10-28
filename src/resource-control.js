@@ -34,8 +34,9 @@ export class ResourceControl {
     });
   }
   observe({filePath,project=null}) {
-    const facts=evidence(filePath); const repo=this.ledger.resources; const prior=repo.byPath(facts.path);
-    if(!prior) { const created=this.identify({filePath,project}); const location=created.locations.find(item=>item.status==='active'&&path.resolve(item.path)===facts.path); return {...created,evidence:facts,external_change:externalChange(location,facts,now())}; }
+    const repo=this.ledger.resources; const prior=repo.byPath(path.resolve(filePath));
+    if(!prior) return this.identify({filePath,project});
+    const facts=evidence(filePath);
     let detail=repo.describe(prior.id); let location=detail.locations.find(item=>item.status==='active'&&path.resolve(item.path)===facts.path);
     if(project?.id&&location&&!location.project_id) { repo.assignLocationProject(location.id,project.id,path.basename(facts.path)); detail=repo.describe(prior.id); location=detail.locations.find(item=>item.id===location.id); }
     return {...detail,resource_id:prior.id,evidence:facts,external_change:externalChange(location,facts,now())};
@@ -72,11 +73,12 @@ export class ResourceControl {
   }
   #projectResources(projectId, { refresh=false } = {}, resourceId=null) {
     const repo=this.ledger.resources;
-    const scopedLocations=repo.locationsForProject(projectId).filter(item=>resourceId===null||item.resource_id===resourceId);
-    const scopedRelationships=repo.relationshipResourcesForProject(projectId).filter(item=>resourceId===null||item.id===resourceId);
+    const scopedLocations=repo.locationsForProject(projectId,resourceId);
+    const scopedRelationships=repo.relationshipResourcesForProject(projectId,resourceId);
     const currentLocations=scopedLocations.filter(item=>['active','missing'].includes(item.status));
-    const currentRelationships=scopedRelationships.filter(item=>item.type!=='stored_in'||currentLocations.some(location=>location.resource_id===item.id));
-    const ids=[...new Set([...currentLocations.map(item=>item.resource_id),...currentRelationships.map(item=>item.id)])];
+    const locationIds=new Set(currentLocations.map(item=>item.resource_id));
+    const relationships=Map.groupBy(scopedRelationships.filter(item=>item.type!=='stored_in'||locationIds.has(item.id)),item=>item.id);
+    const ids=[...new Set([...locationIds,...relationships.keys()])];
     const checks=new Map();
     if(refresh){
       const checked=[];
@@ -92,7 +94,8 @@ export class ResourceControl {
       const detail=repo.describe(resourceId,locationsByResource.get(resourceId));
       const projectLocation=detail.locations.find(item=>item.project_id===projectId&&item.status==='active')
         ??detail.locations.find(item=>item.project_id===projectId&&item.status==='missing');
-      const relationship=currentRelationships.find(item=>item.id===resourceId&&item.type==='stored_in')??currentRelationships.find(item=>item.id===resourceId);
+      const related=relationships.get(resourceId)??[];
+      const relationship=related.find(item=>item.type==='stored_in')??related[0];
       const location=projectLocation??detail.locations.find(item=>item.status==='active')??detail.locations.at(-1)??null;
       const stored=Boolean(projectLocation)||relationship?.type==='stored_in';
       const archive=repo.missingArchiveState(resourceId,projectId);
@@ -291,8 +294,7 @@ export class ResourceControl {
   previewLinkedResource({operation,candidate,decisionChannel='host_command'}) { return this.#linkedPreview(operation,candidate,decisionChannel); }
   #commitLinkedResource({operation,candidate,requestKey,caller,decisionChannel,preview}) {
     const request=this.#linkedRequest(operation,candidate,decisionChannel); const repo=this.ledger.resources;
-    assertRecoveryWritable(this.ledger.db,{projectId:request.project_id,resourceId:request.source_resource_id});
-    assertRecoveryWritable(this.ledger.db,{projectId:request.project_id,resourceId:request.target_resource_id});
+    assertRecoveryWritable(this.ledger.db,{projectId:request.project_id,resourceIds:[request.source_resource_id,request.target_resource_id]});
     const current=repo.linkedRelationship(request.project_id,request.source_resource_id,request.target_resource_id);
     if(current&&current.evidence?.project_id!==request.project_id) throw stateConflict('This Resource pair already has a linked_to edge owned by another Project.');
     const at=now(); const linkEvidence={...request.evidence,project_id:request.project_id}; let relationship=current; let actionType='resource_link_noop'; const effect=preview.effect;
@@ -336,7 +338,7 @@ export class ResourceControl {
     const prior=repo.linkCandidateByRequest(candidate.project_id,key);
     if(prior){if(prior.request_hash!==requestHash)throw stateConflict('Resource link suggestion request key was already used for different facts.');return {...prior,candidate_id:prior.id,review_href:href(prior.id)};}
     const {binding,binding_digest}=this.#suggestionBinding(request);
-    assertRecoveryWritable(this.ledger.db,{projectId:candidate.project_id,resourceId:candidate.source_resource_id}); assertRecoveryWritable(this.ledger.db,{projectId:candidate.project_id,resourceId:candidate.target.id});
+    assertRecoveryWritable(this.ledger.db,{projectId:candidate.project_id,resourceIds:[candidate.source_resource_id,candidate.target.id]});
     return this.ledger.transaction(()=>{
       const current=repo.linkCandidateByRequest(candidate.project_id,key);
       if(current){if(current.request_hash!==requestHash)throw stateConflict('Resource link suggestion request key was already used for different facts.');return {...current,candidate_id:current.id,review_href:href(current.id)};}
@@ -372,7 +374,7 @@ export class ResourceControl {
       try { current=this.#suggestionBinding(row.proposal,{verifyHostHashes:false,decisionChannel:'ui_confirm'}); stale=current.binding_digest!==row.binding_digest; }
       catch(error) { if(decision==='accept') throw stateConflict('Resource link suggestion is stale; it can only be rejected or replaced.'); stale=true; }
       if(stale&&decision==='accept') throw stateConflict('Resource link suggestion is stale; it can only be rejected or replaced.');
-      assertRecoveryWritable(this.ledger.db,{projectId,resourceId:row.source_resource_id}); assertRecoveryWritable(this.ledger.db,{projectId,resourceId:row.target_resource_id});
+      assertRecoveryWritable(this.ledger.db,{projectId,resourceIds:[row.source_resource_id,row.target_resource_id]});
       let receipt=null;
       if(decision==='accept') {
         const linkReceipt=this.#commitLinkedResource({operation:'add',candidate:row.proposal,requestKey:requestKey??`suggestion-${candidateId}`,caller,decisionChannel:'ui_confirm',preview:current.preview});

@@ -8,7 +8,6 @@ export function renderSaveResultView(model, options = {}) {
   const t = (key, values = {}) => translateUi(options.locale, key, options.languageCatalog).replace(/\{(\w+)\}/gu, (match, name) => String(values[name] ?? match));
   const h = (key, values) => escapeHtml(t(key, values));
   const fact = (value) => WORK_COPY_KEYS[value] ? t(WORK_COPY_KEYS[value]) : value;
-  const policy = (value) => ({ pinned_version: t('work.pin_recorded'), follow_latest: t('work.follow_latest'), mixed: t('work.mixed_policy') })[value] ?? value;
 
 function callerLabel(caller = {}) {
   return [caller.agent, caller.tool, caller.model].filter(Boolean).join(' · ') || t('work.not_recorded');

@@ -62,28 +62,38 @@ export class WorkSessionRepository {
     return session(row, sources);
   }
 
+  #sessions(rows) {
+    const sources = new Map(rows.map(row => [row.id, []]));
+    for (let offset = 0; offset < rows.length; offset += 400) {
+      const ids = rows.slice(offset, offset + 400).map(row => row.id);
+      const marks = ids.map(() => '?').join(',');
+      for (const row of this.db.prepare(`SELECT * FROM work_session_sources WHERE session_id IN (${marks}) ORDER BY session_id,ordinal,source_key`).all(...ids)) {
+        sources.get(row.session_id).push(source(row));
+      }
+    }
+    return rows.map(row => session(row, sources.get(row.id)));
+  }
+
   latestOpenForProject(projectId) {
     const row = this.db.prepare("SELECT * FROM work_sessions WHERE project_id=? AND status='open' ORDER BY updated_at DESC,id DESC LIMIT 1").get(projectId);
-    return row ? this.byId(row.id) : null;
+    return row ? this.#sessions([row])[0] : null;
   }
 
   listOpenForProject(projectId) {
-    return this.db.prepare("SELECT id FROM work_sessions WHERE project_id=? AND status='open' ORDER BY updated_at DESC,id DESC")
-      .all(projectId).map((row) => this.byId(row.id));
+    return this.#sessions(this.db.prepare("SELECT * FROM work_sessions WHERE project_id=? AND status='open' ORDER BY updated_at DESC,id DESC").all(projectId));
   }
 
   listForProject(projectId, { limit = 20, offset = 0 } = {}) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('Work Session limit must be an integer between 1 and 100.');
     if (!Number.isInteger(offset) || offset < 0) throw new Error('Work Session offset must be a non-negative integer.');
     const total = Number(this.db.prepare('SELECT COUNT(*) AS total FROM work_sessions WHERE project_id=?').get(projectId).total);
-    const rows = this.db.prepare('SELECT id FROM work_sessions WHERE project_id=? ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?')
+    const rows = this.db.prepare('SELECT * FROM work_sessions WHERE project_id=? ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?')
       .all(projectId, limit, offset);
-    return { sessions: rows.map((row) => this.byId(row.id)), total };
+    return { sessions: this.#sessions(rows), total };
   }
 
   create({ projectId, returnState = {}, resourceIds = [], intent = null, caller = null, at }) {
-    assertRecoveryWritable(this.db, { projectId });
-    for (const resourceId of resourceIds) assertRecoveryWritable(this.db, { resourceId });
+    assertRecoveryWritable(this.db, { projectId, resourceIds });
     if (intent != null && (typeof intent !== 'string' || !intent.trim() || intent.length > 500)) throw new Error('Work goal must be non-empty text of at most 500 characters.');
     return this.transaction(() => {
       const id = `DWT-${crypto.randomBytes(16).toString('hex')}`;
@@ -102,7 +112,7 @@ export class WorkSessionRepository {
     if (intent != null && (typeof intent !== 'string' || !intent.trim() || intent.length > 500)) throw new Error('Work goal must be non-empty text of at most 500 characters.');
     return this.transaction(() => {
       const sourceSession = this.assertRevision(sourceSessionId, baseRevision);
-      for (const source of sourceAssignments ?? sourceSession.sources) assertRecoveryWritable(this.db, { resourceId: source.resource_id });
+      assertRecoveryWritable(this.db, { resourceIds: (sourceAssignments ?? sourceSession.sources).map(source => source.resource_id) });
       const id = `DWT-${crypto.randomBytes(16).toString('hex')}`;
       this.db.prepare(`INSERT INTO work_sessions(
           id,project_id,status,revision,return_state_json,mapping_json,recipe_json,
@@ -208,7 +218,7 @@ export class WorkSessionRepository {
     return this.transaction(() => {
       const current = this.assertRevision(sessionId, baseRevision);
       const desired = [...new Set(resourceIds.map(String))];
-      for (const resourceId of desired) assertRecoveryWritable(this.db, { resourceId });
+      assertRecoveryWritable(this.db, { resourceIds: desired });
       const currentIds = current.sources.map((item) => item.resource_id);
       const changed = JSON.stringify(currentIds) !== JSON.stringify(desired);
       if (returnState != null) {
@@ -254,36 +264,6 @@ export class WorkSessionRepository {
     this.db.prepare('UPDATE work_session_sources SET status=?,error_message=?,updated_at=? WHERE session_id=? AND source_key=?')
       .run(status, errorMessage ?? null, at, sessionId, sourceKey);
     return this.byId(sessionId);
-  }
-
-  setSourceVersionPolicy(sessionId, sourceKey, versionPolicy, at, baseRevision = null) {
-    if (!['follow_latest', 'pinned_version'].includes(versionPolicy)) throw new Error('Choose follow latest or pin recorded version.');
-    return this.transaction(() => {
-      this.assertRevision(sessionId, baseRevision);
-      const current = this.db.prepare('SELECT version_policy FROM work_session_sources WHERE session_id=? AND source_key=?').get(sessionId, sourceKey);
-      if (!current) throw new Error('Work Source is unavailable.');
-      if ((current.version_policy ?? 'follow_latest') === versionPolicy) return this.byId(sessionId);
-      this.db.prepare('UPDATE work_session_sources SET version_policy=?,updated_at=? WHERE session_id=? AND source_key=?')
-        .run(versionPolicy, at, sessionId, sourceKey);
-      this.#invalidate(sessionId, at);
-      return this.byId(sessionId);
-    });
-  }
-
-  adoptSourceVersion(sessionId, sourceKey, { fingerprint, profile, processorVersion = null, status, errorMessage = null }, at, baseRevision = null) {
-    if (!fingerprint?.sha256 || !fingerprint?.file_path) throw new Error('Current Source facts are unavailable.');
-    return this.transaction(() => {
-      const currentSession = this.assertRevision(sessionId, baseRevision);
-      const changed = this.db.prepare(`UPDATE work_session_sources
-        SET fingerprint_json=?,profile_json=?,profile_processor_version=?,version_policy='follow_latest',status=?,error_message=?,updated_at=?
-        WHERE session_id=? AND source_key=?`)
-        .run(JSON.stringify(fingerprint), profile == null ? null : JSON.stringify(profile), processorVersion, status, errorMessage, at, sessionId, sourceKey).changes;
-      if (changed !== 1) throw new Error('Work Source is unavailable.');
-      const mapping = currentSession.mapping.map((item) => ({ ...item, source_sha256: null, source_sheet: null }));
-      this.db.prepare('UPDATE work_sessions SET mapping_json=? WHERE id=?').run(JSON.stringify(mapping), sessionId);
-      this.#invalidate(sessionId, at);
-      return this.byId(sessionId);
-    });
   }
 
   applySourceReconciliations(sessionId, sourceKeys, decision, { updates = [] } = {}, at, baseRevision = null) {

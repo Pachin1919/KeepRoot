@@ -1048,10 +1048,10 @@ test('Save directory prepare creates a Project-bound review record without creat
   const receiptPlan = invoke(['save', 'plan', ...receiptBase]);
   const receiptPrepared = invoke(['save', 'directory', 'prepare', ...receiptBase, '--expected-plan-revision', receiptPlan.plan_revision]);
   evolution.approve(receiptPrepared.run_id, { reason: 'Prepare a receipt-recovery fixture.' });
-  const originalFinish = evolution.ledger.finishEvolutionExecution.bind(evolution.ledger);
-  evolution.ledger.finishEvolutionExecution = () => { throw new Error('fixture interruption after identity event'); };
+  const originalFinish = evolution.ledger.evolution.finishExecution.bind(evolution.ledger.evolution);
+  evolution.ledger.evolution.finishExecution = () => { throw new Error('fixture interruption after identity event'); };
   assert.throws(() => evolution.execute(receiptPrepared.run_id), /fixture interruption after identity event/u);
-  evolution.ledger.finishEvolutionExecution = originalFinish;
+  evolution.ledger.evolution.finishExecution = originalFinish;
   const interruptedDetail = evolution.preview(receiptPrepared.run_id);
   const identityEvent = interruptedDetail.events.find((event) => event.type === 'evolution_save_directory_identity');
   assert.ok(identityEvent?.payload?.identity?.ino);

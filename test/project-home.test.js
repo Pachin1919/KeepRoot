@@ -18,6 +18,24 @@ const rootFor = (t) => {
 };
 const write = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, value); return file; };
 
+test('Home shares one output check across Continue, pinned Work and recent Results; the next read sees edits', t => {
+  const root = rootFor(t); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = write(path.join(root, 'result.csv'), 'value\n1\n');
+  const result = { work_id: 'save', result_path: file, status: 'executed', result_fingerprint: contentFileFingerprint(file), version_policy: 'pinned_version' };
+  const args = { project: { id: 'p' }, root, base: '/projects/p', homeState: { continue: { kind: 'work', id: 'work' }, pinned: [{ kind: 'work', id: 'work' }] },
+    savedWork: [result], workSessions: [{ session_id: 'work', latest_save_id: 'save', revision: 1, sources: [], mapping_complete: true }] };
+  const open = fs.openSync; let reads = 0;
+  fs.openSync = function (target, ...rest) { if (target === file) reads++; return open.call(this, target, ...rest); };
+  try {
+    const first = buildProjectHomeModel(args);
+    assert.equal(reads, 1); assert.match(first.continue_item.result_label, /Pinned result/u); assert.equal(first.recent_results[0].status, 'verified');
+    fs.appendFileSync(file, '2\n'); reads = 0;
+    const second = buildProjectHomeModel(args);
+    assert.equal(reads, 1); assert.equal(second.recent_results[0].status, 'changed'); assert.match(second.continue_item.result_label, /Result changed/u);
+    reads = 0; buildProjectHomeModel({ ...args, metadataOnly: true }); assert.equal(reads, 0);
+  } finally { fs.openSync = open; }
+});
+
 function projectFixture(t) {
   const root = rootFor(t); const stateDir = path.join(root, 'state'); const workspace = path.join(root, 'workspace');
   const projectRoot = path.join(workspace, 'Project'); const file = write(path.join(projectRoot, 'Data', 'input.csv'), 'name\nvalue\n');
@@ -141,6 +159,19 @@ test('Passive Resources and Home reads do not replace Work Continue', async (t) 
   await (await fetch(`${f.server.workspace_url}projects/${f.project.id}/resources?path=Data%2Finput.csv&fragment=folder-files`)).text();
   await (await fetch(`${f.server.workspace_url}projects/${f.project.id}`)).text();
   assert.deepEqual(home.project(f.project.id).continue, before);
+});
+
+test('Resources loads Project Home state once per request for pinned items and Views', async t => {
+  const f = projectFixture(t);
+  const home = createProjectHomeService({ stateDir: f.stateDir });
+  home.pin(f.project.id, { kind: 'resource', id: f.resource.resource_id, resource_id: f.resource.resource_id });
+  f.server = await startAtlasUiServer({ stateDir: f.stateDir, ...serverServicesFor(f.registry), resourceControl: f.resourceControl });
+  let reads = 0; const read = fs.readFileSync;
+  t.mock.method(fs, 'readFileSync', (file, ...args) => { if (file === path.join(f.stateDir, 'ui', 'project-home.json')) reads++; return read(file, ...args); });
+  const response = await fetch(`${f.server.workspace_url}projects/${f.project.id}/resources`);
+  await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(reads, 1);
 });
 
 test('Opening a Resource records a Files anchor only after the open succeeds', async (t) => {

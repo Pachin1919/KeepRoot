@@ -29,7 +29,7 @@ test('Project legacy prepare and organization prepare refuse before persistent c
 });
 
 function seed(f, runId) {
-  f.evolution.ledger.createEvolutionRun({ runId, root: f.root, operation: 'migrate_project', sourcePath: 'A', targetPath: 'B',
+  f.evolution.ledger.evolution.create({ runId, root: f.root, operation: 'migrate_project', sourcePath: 'A', targetPath: 'B',
     projectId: f.projectId, intent: 'Historical migration fixture', baseline: { source_manifest_hash: 'old-hash', project_path: 'A' },
     plan: { summary: 'Historical plan', blockers: [], source_changes: [] }, planHash: 'old-plan', diffText: 'A -> B', diffHash: 'old-diff', caller: {}, startedAt: new Date().toISOString() });
 }
@@ -59,8 +59,8 @@ test('Project historical preview keeps receipts and legacy approval execute roll
   assert.deepEqual(f.evolution.preview(id), prepared);
   const receipt = { run_id: id, status: 'executed', operation: 'migrate_project', verified: true, historical: true,
     before_manifest_hash: 'old-hash', after_manifest_hash: 'old-hash' };
-  f.evolution.ledger.reviewEvolution(id, { decision: 'accepted', reason: 'Historical approval.', reviewedAt: new Date().toISOString() });
-  f.evolution.ledger.finishEvolutionExecution(id, { receipt, executedAt: new Date().toISOString() });
+  f.evolution.ledger.evolution.review(id, { decision: 'accepted', reason: 'Historical approval.', reviewedAt: new Date().toISOString() });
+  f.evolution.ledger.evolution.finishExecution(id, { receipt, executedAt: new Date().toISOString() });
   const before = f.evolution.preview(id);
   assert.deepEqual(before.execution_receipt, receipt);
   assert.match(before.project_migration_compatibility.guidance, guidance);

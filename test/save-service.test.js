@@ -45,6 +45,24 @@ test('Save Service commits one shared result shape and preserves request replay'
   assert.throws(() => save.prepare({ ...options, target: 'Projects/One/other.md' }), { code: 'ATLAS_STATE_CONFLICT' });
 });
 
+test('Save execution loads one receipt for consecutive preflight checks', t => {
+  const root = temporary(t), stateDir = path.join(root, 'state');
+  const candidate = path.join(root, 'candidate.md'); fs.writeFileSync(candidate, 'candidate');
+  const intake = {
+    prepare(options) { return { status: 'prepared', run_id: options.runId, target: 'Projects/One/result.md', project: { id: 'PRJ-1', path: 'Projects/One' } }; },
+    execute() { return { verified: true, rollback_ready: true, after_sha256: 'a'.repeat(64) }; },
+    dispose() {},
+  };
+  const save = createSaveService({ stateDir, intake });
+  const prepared = save.prepare({ root, candidateFile: candidate, projectId: 'PRJ-1', target: 'Projects/One/result.md', caller: { tool: 'test', client_run_id: 'read-once' }, requestKey: 'read-once' });
+  let reads = 0, preflightReads;
+  const read = fs.readFileSync, show = save.show.bind(save);
+  t.mock.method(fs, 'readFileSync', (file, ...args) => { if (file === path.join(stateDir, 'ui', 'saved-work.json')) reads++; return read(file, ...args); });
+  t.mock.method(save, 'show', (...args) => { preflightReads = reads; return show(...args); });
+  assert.equal(save.execute(prepared.save_id, { reason: 'Test Save.' }).status, 'executed');
+  assert.equal(preflightReads, 1);
+});
+
 test('Save journal retries transient Windows replacement contention without duplicating the request', (t) => {
   const caseRoot = temporary(t, 'save-journal-contention-'); const stateDir = path.join(caseRoot, 'state');
   const candidate = path.join(caseRoot, 'candidate.md'); fs.writeFileSync(candidate, 'candidate\n');

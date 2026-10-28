@@ -99,6 +99,15 @@ export function createProjectMembershipService({ stateDir, registry = null, reso
     return { output, inputs:[...inputs,...sources] };
   };
   const configTables=['saved_resource_views','resource_property_definitions','resource_property_batches','resource_property_candidate_batches','row_property_candidate_batches','resource_link_candidates'];
+  const workSources = () => {
+    const rows = all('SELECT * FROM work_session_sources ORDER BY session_id,source_key');
+    const bySession = new Map();
+    for (const row of rows) {
+      if (!bySession.has(row.session_id)) bySession.set(row.session_id, []);
+      bySession.get(row.session_id).push(row);
+    }
+    return { rows, bySession };
+  };
   const graph = (row) => {
     const moving=all("SELECT * FROM resource_locations WHERE status='active' ORDER BY id").filter(l=>inside(row.source.path,l.path)); const ids=new Set(moving.map(l=>l.resource_id));const blockers=[];
     for(const l of moving)if(l.project_id!==row.source_project_id||!activeResource(l.resource_id))blockers.push(`Resource ${l.resource_id} has a foreign or ambiguous location.`);
@@ -112,8 +121,9 @@ export function createProjectMembershipService({ stateDir, registry = null, reso
       if(s.status!=='executed'||!facts.output||!ids.has(facts.output.resource_id)||facts.inputs.some(l=>!l||!ids.has(l.resource_id)||l.project_id!==row.source_project_id))blockers.push(`Save ${s.save_id} is unfinished, has an unidentified input, or crosses the move tree.`);
       if(s.source?.kind==='capture_source')blockers.push(`Capture Source Save ${s.save_id} has Project-level configuration that this membership operation cannot transfer.`);
     }
-    const works=all('SELECT * FROM work_sessions ORDER BY id').filter(w=>row.operation==='merge'&&w.project_id===row.source_project_id||all('SELECT resource_id FROM work_session_sources WHERE session_id=?',w.id).some(s=>ids.has(s.resource_id))||saveIds.has(w.latest_save_id));
-    for(const w of works){const sources=all('SELECT * FROM work_session_sources WHERE session_id=?',w.id);if(w.project_id!==row.source_project_id||sources.some(s=>!ids.has(s.resource_id))||w.latest_save_id&&!saveIds.has(w.latest_save_id))blockers.push(`Work ${w.id} is outside this Project or its dependencies are not closed inside the tree.`);}
+    const { bySession } = workSources();
+    const works=all('SELECT * FROM work_sessions ORDER BY id').filter(w=>row.operation==='merge'&&w.project_id===row.source_project_id||(bySession.get(w.id)??[]).some(s=>ids.has(s.resource_id))||saveIds.has(w.latest_save_id));
+    for(const w of works){const sources=bySession.get(w.id)??[];if(w.project_id!==row.source_project_id||sources.some(s=>!ids.has(s.resource_id))||w.latest_save_id&&!saveIds.has(w.latest_save_id))blockers.push(`Work ${w.id} is outside this Project or its dependencies are not closed inside the tree.`);}
     const boards=all('SELECT * FROM project_boards ORDER BY id').filter(b=>row.operation==='merge'&&b.project_id===row.source_project_id||JSON.parse(b.blocks_json).some(b=>ids.has(b.resource_id)||saveIds.has(b.save_id)));
     for(const b of boards)if(b.project_id!==row.source_project_id||JSON.parse(b.blocks_json).some(b=>b.type==='material_reference'&&!ids.has(b.resource_id)||b.type==='result_preview'&&!saveIds.has(b.save_id)))blockers.push(`Board ${b.id} has a third-party or cross-tree reference; the whole Board must travel together.`);
     const relations=all("SELECT * FROM resource_relationships WHERE status='active' ORDER BY id").filter(r=>ids.has(r.source_resource_id)||r.target_kind==='resource'&&ids.has(r.target_id));
@@ -125,13 +135,14 @@ export function createProjectMembershipService({ stateDir, registry = null, reso
   const snapshot = (row) => {
     const ids=[row.source_project_id,row.target_project_id];const members=new Set([...row.members.resources,...(row.mode==='partition_existing'?row.retained_members.resources:[])]);
     const locations=all("SELECT * FROM resource_locations WHERE status='active' ORDER BY id").filter(l=>ids.includes(l.project_id)||members.has(l.resource_id));
-    const works=all('SELECT * FROM work_sessions ORDER BY id').filter(w=>ids.includes(w.project_id)||all('SELECT resource_id FROM work_session_sources WHERE session_id=?',w.id).some(s=>members.has(s.resource_id)));
+    const { rows: sources, bySession } = workSources();
+    const works=all('SELECT * FROM work_sessions ORDER BY id').filter(w=>ids.includes(w.project_id)||(bySession.get(w.id)??[]).some(s=>members.has(s.resource_id)));
     const workIds=new Set(works.map(w=>w.id));const saveIds=new Set([...row.members.saves,...(row.mode==='partition_existing'?row.retained_members.saves:[])]);
     return { projects:all('SELECT * FROM projects WHERE id IN (?,?) ORDER BY id',...ids), locations:all("SELECT * FROM project_locations WHERE project_id IN (?,?) AND status='active' ORDER BY id",...ids), resources:locations,
       resource_facts:all('SELECT * FROM resources ORDER BY id').filter(r=>members.has(r.id)), resource_actions:all('SELECT * FROM resource_actions ORDER BY id').filter(r=>members.has(r.resource_id)),
       save_links:all('SELECT * FROM resource_save_links ORDER BY save_id,resource_id').filter(r=>members.has(r.resource_id)||saveIds.has(r.save_id)),
       relationships:all("SELECT * FROM resource_relationships WHERE status='active' ORDER BY id").filter(r=>members.has(r.source_resource_id)||r.target_kind==='resource'&&members.has(r.target_id)),
-      works, sources:all('SELECT * FROM work_session_sources ORDER BY session_id,source_key').filter(s=>workIds.has(s.session_id)),
+      works, sources:sources.filter(s=>workIds.has(s.session_id)),
       boards:all('SELECT * FROM project_boards ORDER BY id').filter(b=>ids.includes(b.project_id)||JSON.parse(b.blocks_json).some(b=>members.has(b.resource_id)||saveIds.has(b.save_id))),
       saves:saves().filter(s=>ids.includes(s.project?.id)||saveIds.has(s.save_id)||saveFacts(s).inputs.some(l=>l&&members.has(l.resource_id))),
       rounds:all('SELECT * FROM recovery_rounds WHERE project_id IN (?,?) ORDER BY id',...ids),
