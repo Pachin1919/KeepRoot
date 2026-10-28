@@ -1,6 +1,6 @@
 # Current Save Result
 
-Use this reference when the current task authorizes saving one new result into one existing Project directory. The candidate stays outside the governed root until execution. Atlas never overwrites an existing target.
+Use this reference when the current task authorizes saving one new result into one existing Project directory. The candidate stays outside the governed root until execution. Keeproot never overwrites an existing target.
 
 ## Prepare
 

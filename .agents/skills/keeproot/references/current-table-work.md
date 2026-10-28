@@ -1,6 +1,6 @@
 # Current Table Work
 
-Use this route when the user asks to combine or clean one or more CSV/XLSX Resources inside one active Project. The Host interprets business meaning and proposes field alignment and a Recipe. Atlas owns Source facts, deterministic execution, Preview, Save, verification, relationships, and recovery.
+Use this route when the user asks to combine or clean one or more CSV/XLSX Resources inside one active Project. The Host interprets business meaning and proposes field alignment and a Recipe. Keeproot owns Source facts, deterministic execution, Preview, Save, verification, relationships, and recovery.
 
 ## Start and inspect
 
@@ -35,9 +35,9 @@ Alignment request:
 
 Every prepared `(source_key, column)` must appear exactly once. Call `table-work align <session_id> --request-file <mapping.json> --base-revision <current_revision>`.
 
-Recipe request uses the supported fields returned by Atlas: `combine` (`concatenate` or `join`), `join_how`, `left_key`, `right_key`, `source_column`, `source_column_name`, `cast_column`, `cast_type`, `filter_column`, `filter_operator`, `filter_value`, `fill_column`, `fill_value`, `select_columns`, `deduplicate_columns`, `sort_column`, `sort_direction`, `rename_column`, and `rename_to`. Call `table-work recipe <session_id> --request-file <recipe.json> --base-revision <current_revision>` and preserve the returned revision.
+Recipe request uses the supported fields returned by Keeproot: `combine` (`concatenate` or `join`), `join_how`, `left_key`, `right_key`, `source_column`, `source_column_name`, `cast_column`, `cast_type`, `filter_column`, `filter_operator`, `filter_value`, `fill_column`, `fill_value`, `select_columns`, `deduplicate_columns`, `sort_column`, `sort_direction`, `rename_column`, and `rename_to`. Call `table-work recipe <session_id> --request-file <recipe.json> --base-revision <current_revision>` and preserve the returned revision.
 
-Semantic equivalence is a Host proposal, not an Atlas fact. Do not silently align differently named business fields without user intent or adequate evidence.
+Semantic equivalence is a Host proposal, not an Keeproot fact. Do not silently align differently named business fields without user intent or adequate evidence.
 
 ## Preview and save
 
@@ -46,13 +46,13 @@ Semantic equivalence is a Host proposal, not an Atlas fact. Do not silently alig
 3. Require an executed Save with a verification hash and all Source relationships.
 4. Use `save undo <save_id>` or `save redo <save_id>` for recovery.
 
-Every mutating or executing call is bound to the revision returned by the immediately preceding successful call. On `ATLAS_STATE_CONFLICT`, call `table-work show`, compare the current state, and do not retry the old proposal automatically. Stop on missing, changed, failed, or unsupported Sources until the required reconciliation decision is recorded; also stop on stale mapping or Preview, an existing target, or any Project boundary error. Refresh facts and ask for revised intent when needed. Never edit an original Source or replace an Atlas failure with ad hoc Python or PowerShell.
+Every mutating or executing call is bound to the revision returned by the immediately preceding successful call. On `ATLAS_STATE_CONFLICT`, call `table-work show`, compare the current state, and do not retry the old proposal automatically. Stop on missing, changed, failed, or unsupported Sources until the required reconciliation decision is recorded; also stop on stale mapping or Preview, an existing target, or any Project boundary error. Refresh facts and ask for revised intent when needed. Never edit an original Source or replace an Keeproot failure with ad hoc Python or PowerShell.
 
 ## Discover existing Work
 
 Use `table-work list --project <project_id> [--limit <1..100>] [--offset <nonnegative>] --json` before choosing an existing Work. The default limit is 20. Its pagination is live rather than a snapshot guarantee, so concurrent edits can reorder later pages. Returned Source statuses are stored status values, not fresh file checks. Select one explicit `session_id`, then call `table-work show <session_id>` and use the returned current revision before any update.
 
-To apply the same setup to the current materials without changing the earlier Work or Result, first use `list` and `show`, then call `table-work reuse <session_id> --base-revision <current_revision> --request-file <assignments.json> --tool <tool> --client-run-id <id> [--intent <text>] --json`. Assign every recorded `source_key` to exactly one current Project file. R1 requires the same count and one-to-one assignments. The new Work starts at revision `1`, keeps the recorded mapping meaning and Recipe, and copies neither Preview nor latest Save. Compatible Prepare rebinds each slot; incompatible slots stop independently.
+To apply the same setup to the current materials without changing the earlier Work or Result, first use `list` and `show`, then call `table-work reuse <session_id> --base-revision <current_revision> --request-file <assignments.json> --tool <tool> --client-run-id <id> [--intent <text>] --json`. Assign every recorded `source_key` to exactly one current Project file. Reuse requires the same count and one-to-one assignments. The new Work starts at revision `1`, keeps the recorded mapping meaning and Recipe, and copies neither Preview nor latest Save. Compatible Prepare rebinds each slot; incompatible slots stop independently.
 
 ## Board delivery
 

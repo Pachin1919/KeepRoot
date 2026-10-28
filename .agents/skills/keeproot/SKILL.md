@@ -1,11 +1,11 @@
 ---
 name: keeproot
-description: Use Keeproot (Atlas) via its local CLI for files, project registration, saving and recovery. Do not use for Atlas source development, architecture, Git, docs or test diagnosis.
+description: Use Keeproot via its local CLI for files, project registration, saving and recovery. Do not use for Keeproot source development, architecture, Git, docs or test diagnosis.
 ---
 
 # Keeproot
 
-Keeproot uses the installed Atlas Runtime and `atlas` CLI; it is not a tool named `keeproot` in the MCP tool list. Use the shell to run its locator and returned launcher. Hosts interpret meaning; stay within the task's authorized scope.
+Use the installed Runtime through the `atlas` CLI; it is not a tool named `keeproot` in the MCP tool list. Run its locator and returned launcher from the shell. Hosts interpret meaning; stay within the task's authorized scope.
 
 ## Start once
 

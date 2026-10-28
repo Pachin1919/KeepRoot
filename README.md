@@ -2,7 +2,7 @@
 
 Keeproot helps you and your AI assistant work with local files. Browse documents, process spreadsheets and keep results linked to their sources. Your files stay in their existing project folders.
 
-**Windows preview · 2.0.0-preview.1 · [MIT](LICENSE)**
+**Windows preview · [MIT](LICENSE)**
 
 ## What you can do
 
@@ -31,7 +31,7 @@ Open **Keeproot** from the Start menu, or run:
 & "$env:LOCALAPPDATA\Atlas\atlas-ui.cmd"
 ```
 
-The installation folder and CLI still use the old name `Atlas`. GitHub source ZIPs use the PowerShell command above; the two `.cmd` installers require a separate Windows release package, which is not yet published.
+GitHub source ZIPs use the PowerShell command above; the two `.cmd` installers require a separate Windows release package, which is not yet published.
 
 ## Update
 
@@ -46,7 +46,7 @@ Updates keep your saved state. If you chose custom installation or Skill folders
 
 ## Help
 
-- [中文使用说明](<docs/Atlas V1 使用说明书.md>) — installation, everyday use and recovery.
+- [中文使用说明](docs/usage.md) — installation, everyday use and recovery.
 - [AI assistant setup](.agents/skills/keeproot/SKILL.md) — Codex uses the installed `keeproot` Skill; other clients can use the `atlas` CLI.
 - [Report a problem](https://github.com/Pachin1919/KeepRoot/issues/new/choose) · [Development and known limits](CONTRIBUTING.md). This is a preview, and the full test suite still has unresolved failures.
 

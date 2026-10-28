@@ -1,4 +1,4 @@
-# Atlas runtime state: Ledger, WAL/SHM files, snapshots, demos, and receipts
+# Runtime state: Ledger, WAL/SHM files, snapshots, demos, and receipts
 /.atlas/
 
 # Private development records. Already tracked history needs a separate public export.
@@ -8,10 +8,10 @@
 /.agents/skills/test-gap-audit/
 /docs/**
 !/docs/README.md
-!/docs/Atlas V1 产品说明书.md
-!/docs/Atlas V1 使用说明书.md
-!/docs/Atlas V1 验收指南.md
-!/docs/Atlas 技术作品与企业评审说明.md
+!/docs/product.md
+!/docs/usage.md
+!/docs/try-it.md
+!/docs/architecture.md
 
 # Test and generated output
 /test/.tmp/

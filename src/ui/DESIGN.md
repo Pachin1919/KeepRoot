@@ -1,8 +1,8 @@
-# Atlas Project Studio Design System
+# Keeproot Project Studio Design System
 
 ## Visual theme
 
-Atlas uses a restrained dark local-tool aesthetic: alert, precise, dense enough for daily work, and free of dashboard decoration.
+Keeproot uses a restrained dark local-tool aesthetic: alert, precise, dense enough for daily work, and free of dashboard decoration.
 
 - Design variance: 4/10. Stable grid with one asymmetric Decision Inbox.
 - Motion intensity: 3/10. Hover, focus, selection, disclosure, and action feedback only.
@@ -16,7 +16,7 @@ Atlas uses a restrained dark local-tool aesthetic: alert, precise, dense enough 
 - Soft white ink (`#E7ECE9`): primary text; never pure white.
 - Muted steel (`#B8C1BC` high contrast; `#9BA5A0` standard): metadata and secondary text.
 - Structural line (`#353C43`): separation without bright grid noise.
-- Atlas green (`#72B18C`): the only accent, used for selected state, focus, links, and safe status.
+- Keeproot green (`#72B18C`): the only accent, used for selected state, focus, links, and safe status.
 
 Warning and danger colors are semantic exceptions, never decorative accents.
 
@@ -44,13 +44,13 @@ The installed default uses high-contrast secondary text (`#B8C1BC`). Settings ma
 - Sources: two-column path grid with truncation and full path in the linked Task.
 - Verified output: one quiet green-tinted row, not a dashboard card.
 - Technical identity and Rule history stay collapsed until requested.
-- Status badges are semantic only. A shared Status guide explains whether Atlas continued, paused, stopped, verified, restored, or lacks a current fact.
+- Status badges are semantic only. A shared Status guide explains whether Keeproot continued, paused, stopped, verified, restored, or lacks a current fact.
 - Settings contains display-only preferences: palette, accent, contrast, text size, density, navigation width, and non-essential technical IDs. Project rules, approval policy, Runtime installation, and Ledger facts do not belong in Settings.
 
 ## Interaction
 
-- Every visible primary control must navigate, filter, disclose, or execute a real Atlas action.
-- Focus rings use Atlas green with visible contrast.
+- Every visible primary control must navigate, filter, disclose, or execute a real Keeproot action.
+- Focus rings use Keeproot green with visible contrast.
 - Active feedback uses a 1px vertical shift. No scroll effects, perpetual motion, or decorative animation.
 - Project and primary navigation rails use an accessible separator: pointer drag plus Left/Right/Home/End keyboard control. The width is retained for the current local UI session.
 - Reduced-motion mode removes nonessential transitions.

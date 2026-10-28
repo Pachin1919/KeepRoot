@@ -14,6 +14,7 @@ test('Windows Release contains only distribution files; modified and escaped fil
  t.after(()=>fs.rmSync(root,{recursive:true,force:true,maxRetries:4,retryDelay:50}));
  const bundle=buildReleaseBundle({sourceRoot:path.resolve('.'),outputRoot:root,archive:false});
  const manifest=verifyReleaseBundle(bundle.directory);
+ assert.deepEqual(manifest.files.filter(file=>file.path.startsWith('docs/')).map(file=>file.path).sort(),['docs/product.md','docs/try-it.md','docs/usage.md']);
  assert.ok(manifest.files.some(file=>file.path==='.agents/skills/keeproot/SKILL.md'));
  assert.ok(manifest.files.some(file=>file.path==='assets/keeproot.ico'));
  assert.ok(manifest.files.some(file=>file.path==='fixtures/product-demo/本期.csv'));
